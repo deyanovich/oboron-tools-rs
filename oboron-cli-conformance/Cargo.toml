@@ -1,0 +1,32 @@
+[package]
+name = "oboron-cli-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+description = "Conformance test suite for the oboron protocol CLI surface. Ships canonical test vectors and the `oboron-cli-conformance` binary for validating alternative-language implementations."
+keywords = ["cli", "conformance", "encryption", "oboron", "testing"]
+categories = ["command-line-utilities", "development-tools::testing"]
+readme = "README.md"
+
+[[bin]]
+name = "oboron-cli-conformance"
+path = "src/bin/oboron-cli-conformance.rs"
+
+[features]
+default = ["aags", "aasv", "apgs", "apsv", "upbc", "ztier"]
+aags = []
+aasv = []
+apgs = []
+apsv = []
+upbc = []
+ztier = []
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true

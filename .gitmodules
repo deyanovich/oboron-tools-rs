@@ -1,0 +1,3 @@
+[submodule "oboron-cli-conformance/tests/vectors"]
+	path = oboron-cli-conformance/tests/vectors
+	url = git@gl:oboron/oboron-test-vectors.git
