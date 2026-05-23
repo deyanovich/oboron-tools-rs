@@ -1,0 +1,45 @@
+[package]
+name = "obcrypt-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+description = "Command-line interface for obcrypt — bytes-in/bytes-out symmetric encryption (oboron protocol, a-tier + u-tier). Produces the `obcrypt` binary."
+keywords = ["cli", "encryption", "cryptography", "oboron"]
+categories = ["command-line-utilities", "cryptography"]
+readme = "README.md"
+
+[features]
+# obcrypt-cli is all-secure (a-tier authenticated, u-tier
+# unauthenticated but still real cryptography); there is no unsecure
+# subset, so no aggregate feature is needed. Mirrors obcrypt 0.2.0's
+# feature surface — the upper-layer feature vocabulary stays in
+# agreement with what `obcrypt` actually exposes.
+default = ["aags", "apgs", "aasv", "apsv", "upbc"]
+
+# Individual schemes (forwarded to obcrypt)
+aags = ["obcrypt/aags"]
+apgs = ["obcrypt/apgs"]
+aasv = ["obcrypt/aasv"]
+apsv = ["obcrypt/apsv"]
+upbc = ["obcrypt/upbc"]
+mock = ["obcrypt/mock"]
+
+[[bin]]
+name = "obcrypt"
+path = "src/main.rs"
+
+[dependencies]
+obcrypt = { workspace = true, default-features = false }
+oboron-cli-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+dirs.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
