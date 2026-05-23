@@ -1,0 +1,75 @@
+[package]
+name = "oboron-cli"
+# 0.4.0: refactored to consume oboron-cli-core 0.1.0 (shared
+# CLI plumbing lifted out of this crate), and adds the ~/.ob →
+# ~/.oboron config-dir migration with backward-compat symlink
+# plus the eager base64 → hex profile-key migration. Does not
+# track the workspace version; the prior published version
+# (0.3.1) came from the oboron-rs workspace before oboron-cli
+# moved here, and this is the first release published from
+# oboron-tools-rs.
+version = "0.4.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+description = "CLI for the oboron protocol — string-in/string-out symmetric encryption with obtext encoding. Produces the `ob` and `obz` binaries."
+keywords = ["cli", "encryption", "oboron", "obfuscation", "base32"]
+categories = ["command-line-utilities", "cryptography"]
+readme = "README.md"
+exclude = ["tests/", ".github/"]
+
+[features]
+default = ["all-schemes"]
+
+legacy = ["oboron/legacy"]
+zrbcx = ["oboron/zrbcx"]
+zmock = ["oboron/mock"]
+aags = ["oboron/aags"]
+aasv = ["oboron/aasv"]
+upbc = ["oboron/upbc"]
+apgs = ["oboron/apgs"]
+apsv = ["oboron/apsv"]
+mock = ["oboron/mock"]
+
+# Scheme categories (local aggregation — oboron trimmed its own
+# tier-group features at 973a409, so we no longer forward them).
+atier = ["aags", "apgs", "aasv", "apsv"]
+utier = ["upbc"]
+ztier = ["zrbcx", "zmock", "legacy"]
+secure-schemes = ["atier", "utier"]
+authenticated-schemes = ["atier"]
+deterministic-schemes = ["aags", "aasv"]
+probabilistic-schemes = ["apgs", "apsv", "upbc"]
+all-schemes = ["atier", "utier", "ztier"]
+
+[[bin]]
+name = "ob"
+path = "src/main.rs"
+
+[[bin]]
+name = "obz"
+path = "src/obz_main.rs"
+required-features = ["ztier"]
+
+[dependencies]
+oboron = { workspace = true, features = ["keyless", "base64-keys"] }
+oboron-cli-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+data-encoding.workspace = true
+dirs.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand = "0.8"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"
+tempfile = "3.8"
+clap-markdown = "0.1.5"
