@@ -1,14 +1,14 @@
 //! Cross-implementation conformance harness for the oboron
 //! protocol CLI surface. Spawns the binaries (`ob`, `obz`,
-//! `obc`) end-to-end and asserts behavior against the canonical
-//! test vectors.
+//! `obcrypt`) end-to-end and asserts behavior against the
+//! canonical test vectors.
 //!
 //! Implementers of `ob` / `obz` / `obcrypt` in other languages
 //! point this tool at their binaries to validate conformance:
 //!
 //! ```text
 //! cargo install oboron-cli-conformance
-//! oboron-cli-conformance --ob ./my-ob --obz ./my-obz --obc ./my-obc
+//! oboron-cli-conformance --ob ./my-ob --obz ./my-obz --obcrypt ./my-obcrypt
 //! ```
 //!
 //! Or, if all three binaries are on `$PATH`, no arguments are
@@ -20,7 +20,7 @@
 
 use clap::{Parser, ValueEnum};
 use oboron_cli_conformance::{
-    run_ob_smoke, run_ob_vectors, run_obc_vectors,
+    run_ob_smoke, run_ob_vectors, run_obcrypt_vectors,
     run_obz_legacy_vectors, run_obz_smoke, run_obz_ztier_vectors,
     Config, Report, TestStatus,
 };
@@ -42,10 +42,10 @@ struct Cli {
     #[arg(long, value_name = "PATH")]
     obz: Option<PathBuf>,
 
-    /// Path to the `obcrypt` (or legacy `obc`) binary. Defaults
-    /// to `obc` on `$PATH`.
+    /// Path to the `obcrypt` binary. Defaults to `obcrypt` on
+    /// `$PATH`.
     #[arg(long, value_name = "PATH")]
-    obc: Option<PathBuf>,
+    obcrypt: Option<PathBuf>,
 
     /// Restrict to specific test suites. Repeatable. Defaults
     /// to all suites.
@@ -62,7 +62,7 @@ struct Cli {
 enum Suite {
     ObSmoke,
     ObVectors,
-    ObcVectors,
+    ObcryptVectors,
     ObzSmoke,
     ObzZtierVectors,
     ObzLegacyVectors,
@@ -71,7 +71,7 @@ enum Suite {
 const ALL_SUITES: &[Suite] = &[
     Suite::ObSmoke,
     Suite::ObVectors,
-    Suite::ObcVectors,
+    Suite::ObcryptVectors,
     Suite::ObzSmoke,
     Suite::ObzZtierVectors,
     Suite::ObzLegacyVectors,
@@ -87,8 +87,8 @@ fn main() -> ExitCode {
     if let Some(p) = cli.obz {
         cfg = cfg.with_obz(p);
     }
-    if let Some(p) = cli.obc {
-        cfg = cfg.with_obc(p);
+    if let Some(p) = cli.obcrypt {
+        cfg = cfg.with_obcrypt(p);
     }
 
     let suites: &[Suite] = if cli.suite.is_empty() {
@@ -103,8 +103,8 @@ fn main() -> ExitCode {
         let (label, sub) = match suite {
             Suite::ObSmoke => ("ob smoke", run_ob_smoke(&cfg)),
             Suite::ObVectors => ("ob vectors", run_ob_vectors(&cfg)),
-            Suite::ObcVectors => {
-                ("obc vectors", run_obc_vectors(&cfg))
+            Suite::ObcryptVectors => {
+                ("obcrypt vectors", run_obcrypt_vectors(&cfg))
             }
             Suite::ObzSmoke => ("obz smoke", run_obz_smoke(&cfg)),
             Suite::ObzZtierVectors => (

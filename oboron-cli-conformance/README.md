@@ -31,7 +31,7 @@ implementation):
 oboron-cli-conformance \
   --ob /path/to/my-ob \
   --obz /path/to/my-obz \
-  --obc /path/to/my-obcrypt
+  --obcrypt /path/to/my-obcrypt
 ```
 
 Exit code is `0` iff every test passed.
@@ -44,7 +44,7 @@ oboron-cli-conformance --suite ob-vectors
 
 # Multiple suites
 oboron-cli-conformance \
-  --suite ob-vectors --suite obc-vectors
+  --suite ob-vectors --suite obcrypt-vectors
 ```
 
 ### Verbose output
@@ -69,7 +69,7 @@ Six suites covering the CLI surface:
 |                      |           | for the secure schemes   |
 |                      |           | (`aags`, `aasv`, `apgs`, |
 |                      |           | `apsv`, `upbc`)          |
-| `obc-vectors`        | `obcrypt` | same vectors filtered    |
+| `obcrypt-vectors`    | `obcrypt` | same vectors filtered    |
 |                      |           | to `.hex` formats        |
 | `obz-smoke`          | `obz`     | flag parsing + error     |
 |                      |           | handling for z-tier      |
@@ -136,7 +136,7 @@ Public surface:
   `assert_success()`.
 - `run_ob_smoke(cfg) -> Report`
 - `run_ob_vectors(cfg) -> Report`
-- `run_obc_vectors(cfg) -> Report`
+- `run_obcrypt_vectors(cfg) -> Report`
 - `run_obz_smoke(cfg) -> Report`
 - `run_obz_ztier_vectors(cfg) -> Report`
 - `run_obz_legacy_vectors(cfg) -> Report`

@@ -53,16 +53,16 @@ fn run_obz(cfg: &Config, args: &[&str]) -> Result<String, String> {
         .map_err(|e| format!("obz stdout not utf-8: {e}"))
 }
 
-fn run_obc(cfg: &Config, args: &[&str]) -> Result<String, String> {
+fn run_obcrypt(cfg: &Config, args: &[&str]) -> Result<String, String> {
     let home = TempHome::new();
-    let out = Command::new(&cfg.obc)
+    let out = Command::new(&cfg.obcrypt)
         .env("HOME", home.path())
         .args(args)
         .output()
-        .map_err(|e| format!("spawn obc: {e}"))?;
+        .map_err(|e| format!("spawn obcrypt: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "obc {:?} exit {}\nstderr: {}",
+            "obcrypt {:?} exit {}\nstderr: {}",
             args,
             out.status,
             String::from_utf8_lossy(&out.stderr),
@@ -70,7 +70,7 @@ fn run_obc(cfg: &Config, args: &[&str]) -> Result<String, String> {
     }
     String::from_utf8(out.stdout)
         .map(strip_trailing_newline)
-        .map_err(|e| format!("obc stdout not utf-8: {e}"))
+        .map_err(|e| format!("obcrypt stdout not utf-8: {e}"))
 }
 
 /// Vector-driven conformance for `ob` against the secure-scheme
@@ -149,11 +149,11 @@ fn ob_one_vector(cfg: &Config, v: &TestVector) -> Result<(), String> {
     Ok(())
 }
 
-/// Vector-driven conformance for `obc`. Uses the same vectors as
+/// Vector-driven conformance for `obcrypt`. Uses the same vectors as
 /// `run_ob_vectors`, filtered to `.hex` formats (since
-/// `obc -s <scheme> -x` produces hex output equivalent to
+/// `obcrypt -s <scheme> -x` produces hex output equivalent to
 /// `ob -f <scheme>.hex`).
-pub fn run_obc_vectors(cfg: &Config) -> Report {
+pub fn run_obcrypt_vectors(cfg: &Config) -> Report {
     let mut report = Report::default();
     let vectors: Vec<&TestVector> = parse_vectors_jsonl(TEST_VECTORS_JSONL)
         .into_iter()
@@ -165,24 +165,24 @@ pub fn run_obc_vectors(cfg: &Config) -> Report {
 
     for v in &vectors {
         let scheme = scheme_of(&v.format);
-        let name = format!("obc_vec:{}:{}", v.format, v.plaintext);
+        let name = format!("obcrypt_vec:{}:{}", v.format, v.plaintext);
 
         if !cfg.schemes.enabled(scheme) {
             report.skip(name, format!("scheme {scheme} disabled"));
             continue;
         }
 
-        report.record(name, obc_one_vector(cfg, v));
+        report.record(name, obcrypt_one_vector(cfg, v));
     }
 
     report
 }
 
-fn obc_one_vector(cfg: &Config, v: &TestVector) -> Result<(), String> {
+fn obcrypt_one_vector(cfg: &Config, v: &TestVector) -> Result<(), String> {
     let scheme = scheme_of(&v.format);
     if is_deterministic_secure(&v.format) {
         // exact-match enc
-        let got = run_obc(
+        let got = run_obcrypt(
             cfg,
             &[
                 "encrypt", "-s", scheme, "-x", "-k", HARDCODED_KEY_HEX,
@@ -196,7 +196,7 @@ fn obc_one_vector(cfg: &Config, v: &TestVector) -> Result<(), String> {
             ));
         }
         // dec
-        let pt = run_obc(
+        let pt = run_obcrypt(
             cfg,
             &[
                 "decrypt", "-s", scheme, "-X", "-k", HARDCODED_KEY_HEX,
@@ -211,7 +211,7 @@ fn obc_one_vector(cfg: &Config, v: &TestVector) -> Result<(), String> {
         }
     } else {
         // probabilistic
-        let pt = run_obc(
+        let pt = run_obcrypt(
             cfg,
             &[
                 "decrypt", "-s", scheme, "-X", "-k", HARDCODED_KEY_HEX,
@@ -224,14 +224,14 @@ fn obc_one_vector(cfg: &Config, v: &TestVector) -> Result<(), String> {
                 v.plaintext, pt
             ));
         }
-        let fresh = run_obc(
+        let fresh = run_obcrypt(
             cfg,
             &[
                 "encrypt", "-s", scheme, "-x", "-k", HARDCODED_KEY_HEX,
                 "--", &v.plaintext,
             ],
         )?;
-        let rt = run_obc(
+        let rt = run_obcrypt(
             cfg,
             &[
                 "decrypt", "-s", scheme, "-X", "-k", HARDCODED_KEY_HEX,

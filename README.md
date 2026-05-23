@@ -23,7 +23,7 @@ The conformance suite spawns `ob`, `obz`, and `obcrypt`
 end-to-end; have those binaries available on `$PATH` before
 `cargo test`, or pass explicit paths to the
 `oboron-cli-conformance` binary via `--ob`, `--obz`,
-`--obc`.
+`--obcrypt`.
 
 ## License
 

@@ -9,7 +9,7 @@
 //!   resolved via `$PATH`).
 //! - **Binary**: `cargo install oboron-cli-conformance` produces
 //!   `oboron-cli-conformance`, a CLI driver that takes
-//!   `--ob <path>` / `--obz <path>` / `--obc <path>` overrides
+//!   `--ob <path>` / `--obz <path>` / `--obcrypt <path>` overrides
 //!   and runs the same `run_*` functions, intended for
 //!   alternative-language implementations to validate their
 //!   `ob`/`obz`/`obcrypt` against the canonical vectors.
@@ -22,7 +22,7 @@ pub mod vectors;
 
 pub use smoke::{run_ob_smoke, run_obz_smoke};
 pub use vectors::{
-    run_ob_vectors, run_obc_vectors, run_obz_legacy_vectors,
+    run_ob_vectors, run_obcrypt_vectors, run_obz_legacy_vectors,
     run_obz_ztier_vectors,
 };
 
@@ -51,12 +51,12 @@ pub const LEGACY_VECTORS_JSONL: &str =
 pub struct Config {
     pub ob: PathBuf,
     pub obz: PathBuf,
-    pub obc: PathBuf,
+    pub obcrypt: PathBuf,
     pub schemes: SchemeFilter,
 }
 
 impl Config {
-    /// Default config: resolve `ob`/`obz`/`obc` via `$PATH`. Used
+    /// Default config: resolve `ob`/`obz`/`obcrypt` via `$PATH`. Used
     /// by both `cargo test` (where binaries are expected to be
     /// pre-installed) and the conformance binary (when no
     /// override flags are passed).
@@ -64,7 +64,7 @@ impl Config {
         Self {
             ob: "ob".into(),
             obz: "obz".into(),
-            obc: "obc".into(),
+            obcrypt: "obcrypt".into(),
             schemes: SchemeFilter::all(),
         }
     }
@@ -77,8 +77,8 @@ impl Config {
         self.obz = obz;
         self
     }
-    pub fn with_obc(mut self, obc: PathBuf) -> Self {
-        self.obc = obc;
+    pub fn with_obcrypt(mut self, obcrypt: PathBuf) -> Self {
+        self.obcrypt = obcrypt;
         self
     }
     pub fn with_schemes(mut self, schemes: SchemeFilter) -> Self {

@@ -1,6 +1,12 @@
 [package]
 name = "oboron-cli-conformance"
-version.workspace = true
+# 0.2.0: renamed the `obc` API surface to `obcrypt` (field
+# `Config::obc` → `Config::obcrypt`, function `run_obc_vectors`
+# → `run_obcrypt_vectors`, builder `with_obc` → `with_obcrypt`,
+# CLI flag `--obc` → `--obcrypt`, suite name `obc-vectors` →
+# `obcrypt-vectors`) to match the renamed obcrypt-cli binary.
+# Does not track the workspace version.
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
