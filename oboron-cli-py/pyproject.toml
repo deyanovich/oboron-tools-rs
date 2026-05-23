@@ -1,0 +1,41 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "oboron-cli"
+dynamic = ["version"]
+requires-python = ">=3.8"
+description = "Standalone install of the oboron CLI binaries (`ob` and `obz`) via pip — string-in/string-out symmetric encryption with obtext encoding."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Bojan Đuričković" }
+]
+keywords = ["cli", "encryption", "oboron", "obfuscation", "base32"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Security :: Cryptography",
+]
+
+[project.urls]
+Homepage = "https://oboron.org/"
+Repository = "https://gitlab.com/oboron/oboron-tools-rs"
+Documentation = "https://oboron.org/"
+Changelog = "https://gitlab.com/oboron/oboron-tools-rs/-/blob/master/oboron-cli/CHANGELOG.md"
+"Source (Rust crate)" = "https://crates.io/crates/oboron-cli"
+
+[tool.maturin]
+# Bin-only wheel: the wrapped Rust crate's two `[[bin]]` targets
+# (`ob` and `obz`) are packaged into the wheel's scripts payload;
+# `pip install oboron-cli` drops both on $PATH. No Python module
+# ships in this distribution.
+manifest-path = "../oboron-cli/Cargo.toml"
+bindings = "bin"
+strip = true

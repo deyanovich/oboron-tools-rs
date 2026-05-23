@@ -1,0 +1,41 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "obcrypt-cli"
+dynamic = ["version"]
+requires-python = ">=3.8"
+description = "Standalone install of the obcrypt CLI binary via pip — bytes-in/bytes-out symmetric encryption (oboron protocol, a-tier + u-tier)."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Bojan Đuričković" }
+]
+keywords = ["cli", "encryption", "cryptography", "oboron", "obcrypt"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Security :: Cryptography",
+]
+
+[project.urls]
+Homepage = "https://oboron.org/"
+Repository = "https://gitlab.com/oboron/oboron-tools-rs"
+Documentation = "https://oboron.org/"
+Changelog = "https://gitlab.com/oboron/oboron-tools-rs/-/blob/master/obcrypt-cli/CHANGELOG.md"
+"Source (Rust crate)" = "https://crates.io/crates/obcrypt-cli"
+
+[tool.maturin]
+# Bin-only wheel: the wrapped Rust crate's `[[bin]] name = "obcrypt"`
+# is packaged into the wheel's scripts payload; `pip install
+# obcrypt-cli` drops the `obcrypt` binary on $PATH. No Python module
+# ships in this distribution.
+manifest-path = "../obcrypt-cli/Cargo.toml"
+bindings = "bin"
+strip = true
