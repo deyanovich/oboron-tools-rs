@@ -1,0 +1,22 @@
+[package]
+name = "oboron-cli-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+description = "Shared CLI plumbing for the oboron protocol tooling — profile/config management for the ~/.oboron/ dir, key normalization, file backup."
+keywords = ["cli", "oboron", "obcrypt", "profile"]
+categories = ["command-line-utilities"]
+readme = "README.md"
+
+[dependencies]
+anyhow.workspace = true
+data-encoding.workspace = true
+dirs.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
