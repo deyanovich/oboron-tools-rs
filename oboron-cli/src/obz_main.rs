@@ -201,7 +201,7 @@ enum Commands {
         /// Plaintext string (reads from stdin if not provided)
         text: Option<String>,
 
-        /// Secret key (43 base64 chars)
+        /// Secret (64 hex chars, or legacy 43-char base64)
         #[arg(short = 's', long, conflicts_with = "profile", conflicts_with = "keyless")]
         secret: Option<String>,
 
@@ -233,7 +233,7 @@ enum Commands {
         /// Obtext string (reads from stdin if not provided)
         text: Option<String>,
 
-        /// Secret key (43 base64 chars)
+        /// Secret (64 hex chars, or legacy 43-char base64)
         #[arg(short = 's', long, conflicts_with = "profile", conflicts_with = "keyless")]
         secret: Option<String>,
 
@@ -285,10 +285,10 @@ enum Commands {
         command: ProfileCommands,
     },
 
-    /// Output the secret key
+    /// Output the secret (canonical hex by default)
     #[command(visible_alias = "s")]
     Secret {
-        /// Secret key (43 base64 chars)
+        /// Secret (64 hex chars, or legacy 43-char base64)
         #[arg(short = 's', long)]
         secret: Option<String>,
 
@@ -300,10 +300,17 @@ enum Commands {
         #[arg(short = 'K', long)]
         keyless: bool,
 
-        /// Output secret as hex instead of base64
+        /// Deprecated no-op: hex is now the default output format.
         #[arg(short = 'x', long)]
         hex: bool,
+
+        /// Output the secret as legacy base64 (deprecated; removed before oboron 1.0)
+        #[arg(short = 'B', long, conflicts_with = "hex")]
+        base64: bool,
     },
+
+    /// Generate a fresh random secret and print it (does not touch any profile)
+    Secretgen,
 
     /// Generate shell completion script
     Completion {
@@ -360,7 +367,7 @@ enum ProfileCommands {
         /// Profile name
         name: String,
 
-        /// Secret key (43 base64 chars)
+        /// Secret (64 hex chars, or legacy 43-char base64)
         #[arg(short = 's', long)]
         secret: Option<String>,
     },
@@ -387,7 +394,7 @@ enum ProfileCommands {
         /// Profile name
         name: String,
 
-        /// Secret key (43 base64 chars)
+        /// Secret (64 hex chars, or legacy 43-char base64)
         #[arg(short = 's', long)]
         secret: Option<String>,
     },
@@ -395,6 +402,25 @@ enum ProfileCommands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // One-time migration of the legacy standalone `~/.obz/` config dir
+    // into the shared `~/.oboron/ztier/`. No-op on fresh installs and
+    // on every subsequent invocation.
+    if let Some(notice) = obz_config::ensure_ztier_dir_migrated()? {
+        eprintln!(
+            "notice: migrated legacy obz config dir {} → {}",
+            notice.from.display(),
+            notice.to.display(),
+        );
+        if notice.symlink_created {
+            eprintln!(
+                "        left a {} → {} symlink for backward compatibility \
+                 with any older obz binary still installed.",
+                notice.from.display(),
+                notice.to.display(),
+            );
+        }
+    }
 
     match cli.command {
         Commands::Enc {
@@ -472,7 +498,15 @@ fn main() -> Result<()> {
             profile,
             keyless,
             hex,
-        } => secret_command(secret, profile, keyless, hex),
+            base64,
+        } => secret_command(secret, profile, keyless, hex, base64),
+
+        Commands::Secretgen => {
+            // Convenience: print a fresh z-tier secret. Does not
+            // create or modify any profile.
+            println!("{}", obz_config::generate_secret());
+            Ok(())
+        }
 
         Commands::Completion { shell } => {
             obz_completions::generate_completion(shell);
@@ -497,8 +531,8 @@ fn enc_command(
         let encd = obz.enc(&text)?;
         println!("{}", encd);
     } else {
-        let b64_secret = get_secret(secret.as_ref(), profile.as_deref(), cfg.as_ref())?;
-        let obz = oboron::ztier::Obz::new(&format, &b64_secret)?;
+        let secret_hex = get_secret(secret.as_ref(), profile.as_deref(), cfg.as_ref())?;
+        let obz = oboron::ztier::Obz::new(&format, &secret_hex)?;
         let encd = obz.enc(&text)?;
         println!("{}", encd);
     }
@@ -527,8 +561,8 @@ fn dec_command(
         };
         println!("{}", decd);
     } else {
-        let b64_secret = get_secret(secret.as_ref(), profile.as_deref(), cfg.as_ref())?;
-        let obz = oboron::ztier::Obz::new(&format, &b64_secret)?;
+        let secret_hex = get_secret(secret.as_ref(), profile.as_deref(), cfg.as_ref())?;
+        let obz = oboron::ztier::Obz::new(&format, &secret_hex)?;
         let decd = if scheme_is_explicit {
             obz.dec(&text)?
         } else {
@@ -578,72 +612,53 @@ fn secret_command(
     secret: Option<String>,
     profile: Option<String>,
     keyless: bool,
-    hex: bool,
+    _hex: bool,
+    base64: bool,
 ) -> Result<()> {
-    use data_encoding::{BASE64URL_NOPAD, HEXLOWER};
-
-    if keyless {
-        if hex {
-            let secret_bytes = oboron::HARDCODED_KEY_BYTES;
-            let hex_secret = HEXLOWER.encode(&secret_bytes[0..32]);
-            println!("{}", hex_secret);
-        } else {
-            let secret_bytes = oboron::HARDCODED_KEY_BYTES;
-            let b64_secret = BASE64URL_NOPAD.encode(&secret_bytes[0..32]);
-            println!("{}", b64_secret);
-        }
-        return Ok(());
-    }
-
-    let cfg = obz_config::load_config().ok();
-
-    if let Some(s) = secret {
-        if hex {
-            let secret_bytes = BASE64URL_NOPAD
-                .decode(s.as_bytes())
-                .context("Failed to decode base64 secret")?;
-            let hex_secret = HEXLOWER.encode(&secret_bytes);
-            println!("{}", hex_secret);
-        } else {
-            println!("{}", s);
-        }
-    } else if let Some(prof) = profile
-        .as_deref()
-        .or_else(|| cfg.as_ref().map(|c| c.profile.as_str()))
-    {
-        let profile = obz_config::load_profile(prof)?;
-        if let Some(s) = &profile.secret {
-            println!(
-                "{}",
-                if hex {
-                    let secret_bytes = BASE64URL_NOPAD.decode(s.as_bytes())?;
-                    HEXLOWER.encode(&secret_bytes)
-                } else {
-                    s.clone()
-                }
-            );
-        } else {
-            anyhow::bail!("Profile '{}' has no secret", prof);
-        }
-    } else if let Ok(env_secret) = std::env::var("OBORON_SECRET") {
-        println!(
-            "{}",
-            if hex {
-                let secret_bytes = BASE64URL_NOPAD
-                    .decode(env_secret.as_bytes())
-                    .context("Failed to decode base64 secret")?;
-                HEXLOWER.encode(&secret_bytes)
-            } else {
-                env_secret
-            }
-        );
+    // Resolve the secret as canonical hex from whichever source
+    // applies, then emit. Hex is the canonical form and the default;
+    // `--hex` is an accepted no-op, `--base64` opts into the
+    // deprecated form. Mirrors `ob key`.
+    let hex_secret = if keyless {
+        hex::encode(&oboron::HARDCODED_KEY_BYTES[0..32])
+    } else if let Some(s) = secret {
+        obz_config::normalize_secret_to_hex(&s).context("invalid --secret")?
     } else {
-        anyhow::bail!(
-            "No secret specified: provide --secret, set $OBORON_SECRET, use --profile, or run 'obz init'"
-        );
+        let cfg = obz_config::load_config().ok();
+        let active = cfg.as_ref().map(|c| c.profile.as_str());
+        if let Some(prof) = profile.as_deref().or(active) {
+            // Migrate any legacy base64 profile in place and print a
+            // notice, exactly like enc / dec / config show / profile show.
+            obz_config::load_profile_secret_with_notice(prof)?
+        } else if let Ok(env_secret) = std::env::var("OBORON_SECRET") {
+            obz_config::normalize_secret_to_hex(&env_secret)
+                .context("invalid $OBORON_SECRET")?
+        } else {
+            anyhow::bail!(
+                "No secret specified: provide --secret, set $OBORON_SECRET, use --profile, or run 'obz init'"
+            );
+        }
+    };
+
+    if base64 {
+        warn_base64_secret_output();
+        let secret_bytes = hex::decode(&hex_secret).context("decode secret")?;
+        println!("{}", data_encoding::BASE64URL_NOPAD.encode(&secret_bytes));
+    } else {
+        println!("{hex_secret}");
     }
 
     Ok(())
+}
+
+fn warn_base64_secret_output() {
+    eprintln!(
+        "warning: base64 secret output is deprecated and will be removed before \
+         oboron 1.0;"
+    );
+    eprintln!(
+        "         hex is the canonical secret format and the default for 'obz secret'."
+    );
 }
 
 fn get_secret(
@@ -653,26 +668,30 @@ fn get_secret(
 ) -> Result<String> {
     // 1. Explicit --secret flag
     if let Some(secret_str) = secret {
-        validate_base64_secret(secret_str)?;
-        return Ok(secret_str.clone());
+        let (hex, fmt) = obz_config::normalize_secret_classify(secret_str)
+            .context("invalid --secret")?;
+        if fmt == obz_config::SecretFormat::LegacyBase64 {
+            warn_base64_secret_via("--secret");
+        }
+        return Ok(hex);
     }
 
     // 2. Environment variable
     if let Ok(env_secret) = std::env::var("OBORON_SECRET") {
-        validate_base64_secret(&env_secret)?;
-        return Ok(env_secret);
+        let (hex, fmt) = obz_config::normalize_secret_classify(&env_secret)
+            .context("invalid $OBORON_SECRET")?;
+        if fmt == obz_config::SecretFormat::LegacyBase64 {
+            warn_base64_secret_via("$OBORON_SECRET");
+        }
+        return Ok(hex);
     }
 
     // 3-4. Profile (explicit or default from config)
     let profile_name = profile.or_else(|| config.map(|c| c.profile.as_str()));
 
     if let Some(name) = profile_name {
-        let profile = obz_config::load_profile(name)?;
-        if let Some(s) = &profile.secret {
-            validate_base64_secret(s)?;
-            return Ok(s.clone());
-        }
-        anyhow::bail!("Profile '{}' has no secret", name);
+        // Migrate any legacy base64 profile in place and print a notice.
+        return obz_config::load_profile_secret_with_notice(name);
     }
 
     Err(anyhow::anyhow!(
@@ -680,27 +699,14 @@ fn get_secret(
     ))
 }
 
-fn validate_base64_secret(secret_str: &str) -> Result<()> {
-    if secret_str.len() != 43 {
-        return Err(anyhow::anyhow!(
-            "Secret must be 43 base64 chars, got {} chars",
-            secret_str.len()
-        ));
-    }
-
-    use data_encoding::BASE64URL_NOPAD;
-    let secret_bytes = BASE64URL_NOPAD
-        .decode(secret_str.as_bytes())
-        .context("Invalid secret base64 encoding")?;
-
-    if secret_bytes.len() != 32 {
-        return Err(anyhow::anyhow!(
-            "Secret must decode to 32 bytes, got {} bytes",
-            secret_bytes.len()
-        ));
-    }
-
-    Ok(())
+fn warn_base64_secret_via(source: &str) {
+    eprintln!(
+        "warning: {source} was given as legacy base64. base64 secrets are deprecated \
+         and will be removed before oboron 1.0;"
+    );
+    eprintln!(
+        "         pass a 64-character hex secret instead. The base64 secret was accepted."
+    );
 }
 
 fn get_text_input(text: Option<String>) -> Result<String> {

@@ -1,5 +1,11 @@
 [package]
 name = "oboron-cli"
+# 0.5.0: hex-canonical secrets for obz, matching ob/obcrypt keys
+# (obz generates/displays/accepts 64-char hex; base64 still
+# accepted transitionally); obz config moves under the shared
+# ~/.oboron/ztier/ (with migration); new `ob keygen` / `obz
+# secretgen`; `ob key` defaults to hex (was deprecated base64)
+# with migrate-on-display.
 # 0.4.0: refactored to consume oboron-cli-core 0.1.0 (shared
 # CLI plumbing lifted out of this crate), and adds the ~/.ob →
 # ~/.oboron config-dir migration with backward-compat symlink
@@ -8,7 +14,7 @@ name = "oboron-cli"
 # (0.3.1) came from the oboron-rs workspace before oboron-cli
 # moved here, and this is the first release published from
 # oboron-tools-rs.
-version = "0.4.0"
+version = "0.5.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -66,7 +72,6 @@ dirs.workspace = true
 hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-rand = "0.8"
 
 [dev-dependencies]
 assert_cmd = "2.0"

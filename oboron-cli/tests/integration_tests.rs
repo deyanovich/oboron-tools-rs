@@ -809,3 +809,49 @@ fn test_obz_env_secret_overridden_by_flag() {
 
     cleanup_test_home(&test_home);
 }
+
+#[test]
+fn test_ob_keygen_prints_fresh_hex_key() {
+    // `ob keygen` prints a 128-char lowercase-hex key to stdout and
+    // touches no profile (no config dir needed).
+    let test_home = test_home_dir();
+    let mut cmd = Command::cargo_bin("ob").unwrap();
+    cmd.env("HOME", test_home.as_os_str())
+        .arg("keygen")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_match(r"^[0-9a-f]{128}\n$").unwrap());
+    cleanup_test_home(&test_home);
+}
+
+#[test]
+fn test_ob_keygen_differs_each_run() {
+    let test_home = test_home_dir();
+    let run = || {
+        Command::cargo_bin("ob")
+            .unwrap()
+            .env("HOME", test_home.as_os_str())
+            .arg("keygen")
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone()
+    };
+    assert_ne!(run(), run(), "two keygen runs should differ");
+    cleanup_test_home(&test_home);
+}
+
+#[test]
+fn test_obz_secretgen_prints_fresh_secret() {
+    // `obz secretgen` prints a fresh 64-char hex secret (32 bytes) to
+    // stdout and touches no profile.
+    let test_home = test_home_dir();
+    let mut cmd = Command::cargo_bin("obz").unwrap();
+    cmd.env("HOME", test_home.as_os_str())
+        .arg("secretgen")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_match(r"^[0-9a-f]{64}\n$").unwrap());
+    cleanup_test_home(&test_home);
+}

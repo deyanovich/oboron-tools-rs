@@ -4,10 +4,9 @@ resolver = "2"
 
 # Release / bench profiles at the workspace level so they actually
 # apply (Cargo silently ignores per-package profiles on non-root
-# members). LTO is important because the CLI binaries (ob, obz,
-# obcrypt) depend on the oboron / obcrypt library crates —
-# without cross-crate inlining of the AEAD hot path the binaries
-# leave real performance on the table.
+# members). LTO is important for the consumers that path-dep on the
+# oboron / obcrypt library crates — without it, cross-crate inlining
+# of the AEAD hot path doesn't happen.
 [profile.release]
 opt-level = 3
 lto = true
@@ -39,3 +38,4 @@ dirs = "5.0"
 hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+thiserror = "1.0"

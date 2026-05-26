@@ -248,7 +248,7 @@ enum Commands {
         /// Plaintext string (reads from stdin if not provided)
         text: Option<String>,
 
-        /// Encryption key (86 base64 chars, for non-ztier schemes)
+        /// Encryption key (128 hex chars, or legacy 86-char base64; for non-ztier schemes)
         #[arg(short, long, conflicts_with = "profile", conflicts_with = "keyless")]
         key: Option<String>,
 
@@ -280,7 +280,7 @@ enum Commands {
         /// Obtext string (reads from stdin if not provided)
         text: Option<String>,
 
-        /// Encryption key (86 base64 chars, for non-ztier schemes)
+        /// Encryption key (128 hex chars, or legacy 86-char base64; for non-ztier schemes)
         #[arg(short, long, conflicts_with = "profile", conflicts_with = "keyless")]
         key: Option<String>,
 
@@ -332,7 +332,7 @@ enum Commands {
         command: ProfileCommands,
     },
 
-    /// Output the encryption key
+    /// Output the encryption key (canonical hex by default)
     #[command(visible_alias = "k")]
     Key {
         /// Use named key profile
@@ -343,10 +343,17 @@ enum Commands {
         #[arg(short = 'K', long)]
         keyless: bool,
 
-        /// Output key as hex instead of base64
+        /// Deprecated no-op: hex is now the default output format.
         #[arg(short = 'x', long)]
         hex: bool,
+
+        /// Output the key as legacy base64 (deprecated; removed before oboron 1.0)
+        #[arg(short = 'B', long, conflicts_with = "hex")]
+        base64: bool,
     },
+
+    /// Generate a fresh random key and print it (does not touch any profile)
+    Keygen,
 
     /// Generate shell completion script
     Completion {
@@ -400,7 +407,7 @@ enum ProfileCommands {
         /// Profile name
         name: String,
 
-        /// Encryption key (86 base64 chars)
+        /// Encryption key (128 hex chars, or legacy 86-char base64)
         #[arg(short, long)]
         key: Option<String>,
     },
@@ -425,7 +432,7 @@ enum ProfileCommands {
         /// Profile name
         name: String,
 
-        /// Encryption key (86 base64 chars)
+        /// Encryption key (128 hex chars, or legacy 86-char base64)
         #[arg(short, long)]
         key: Option<String>,
     },
@@ -522,7 +529,15 @@ fn main() -> Result<()> {
             profile,
             keyless,
             hex,
-        } => key_command(profile, keyless, hex),
+            base64,
+        } => key_command(profile, keyless, hex, base64),
+
+        Commands::Keygen => {
+            // Convenience: print a fresh canonical-hex key. Does not
+            // create or modify any profile.
+            println!("{}", oboron::generate_key());
+            Ok(())
+        }
 
         Commands::Completion { shell } => {
             completions::generate_completion(shell);
@@ -636,55 +651,51 @@ fn config_set_command(
     Ok(())
 }
 
-fn key_command(profile: Option<String>, keyless: bool, hex: bool) -> Result<()> {
-    use data_encoding::BASE64URL_NOPAD;
-
-    if keyless {
-        // Output hardcoded key. Hex is canonical now; --hex is implicit.
-        if hex {
-            println!("{}", oboron::HARDCODED_KEY_HEX);
-        } else {
-            // Legacy: encode hex bytes back to base64 for the --no-hex caller.
-            let key_bytes = hex::decode(oboron::HARDCODED_KEY_HEX)
-                .context("decode HARDCODED_KEY_HEX")?;
-            println!("{}", BASE64URL_NOPAD.encode(&key_bytes));
-        }
-        return Ok(());
-    }
-
-    let cfg = config::load_config().ok();
-    let active_profile_name = cfg.as_ref().and_then(|c| c.profile.as_deref());
-
-    if let Some(prof) = profile.as_deref().or(active_profile_name) {
-        let profile = config::load_profile(prof)?;
-        if let Some(k) = &profile.key {
-            // Profile keys may be stored as hex (canonical) or legacy
-            // base64 — normalize before transforming.
-            let hex_key = oboron_cli_core::normalize_key_to_hex(k)?;
-            if hex {
-                println!("{hex_key}");
-            } else {
-                let key_bytes = hex::decode(&hex_key).context("decode profile key")?;
-                println!("{}", BASE64URL_NOPAD.encode(&key_bytes));
-            }
-        } else {
-            anyhow::bail!("Profile '{}' has no key", prof);
-        }
-    } else if let Ok(env_key) = std::env::var("OBORON_KEY") {
-        let hex_key = oboron_cli_core::normalize_key_to_hex(&env_key)?;
-        if hex {
-            println!("{hex_key}");
-        } else {
-            let key_bytes = hex::decode(&hex_key).context("decode env key")?;
-            println!("{}", BASE64URL_NOPAD.encode(&key_bytes));
-        }
+fn key_command(
+    profile: Option<String>,
+    keyless: bool,
+    _hex: bool,
+    base64: bool,
+) -> Result<()> {
+    // Resolve the key as canonical hex from whichever source applies,
+    // then emit. Hex is the canonical form and the default; `--hex` is
+    // an accepted no-op, `--base64` opts into the deprecated form.
+    let hex_key = if keyless {
+        oboron::HARDCODED_KEY_HEX.to_string()
     } else {
-        anyhow::bail!(
-            "No key specified: provide --profile, set $OBORON_KEY, or run 'ob init'"
-        );
+        let cfg = config::load_config().ok();
+        let active_profile_name = cfg.as_ref().and_then(|c| c.profile.as_deref());
+
+        if let Some(prof) = profile.as_deref().or(active_profile_name) {
+            // Migrate any legacy base64 profile in place and print a
+            // notice, exactly like enc / dec / config show / profile show.
+            oboron_cli_core::commands::load_profile_key_with_notice(prof)?
+        } else if let Ok(env_key) = std::env::var("OBORON_KEY") {
+            oboron_cli_core::normalize_key_to_hex(&env_key).context("invalid $OBORON_KEY")?
+        } else {
+            anyhow::bail!(
+                "No key specified: provide --profile, set $OBORON_KEY, or run 'ob init'"
+            );
+        }
+    };
+
+    if base64 {
+        warn_base64_output();
+        let key_bytes = hex::decode(&hex_key).context("decode key")?;
+        println!("{}", data_encoding::BASE64URL_NOPAD.encode(&key_bytes));
+    } else {
+        println!("{hex_key}");
     }
 
     Ok(())
+}
+
+fn warn_base64_output() {
+    eprintln!(
+        "warning: base64 key output is deprecated and will be removed before \
+         oboron 1.0;"
+    );
+    eprintln!("         hex is the canonical key format and the default for 'ob key'.");
 }
 
 fn get_key(key: Option<&String>, profile: Option<&str>, config: Option<&Config>) -> Result<String> {

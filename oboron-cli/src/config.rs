@@ -9,7 +9,7 @@
 //! `Result<Option<Config>>` shape.
 
 use anyhow::{anyhow, Result};
-pub use oboron_cli_core::{Config, KeyProfile};
+pub use oboron_cli_core::Config;
 use oboron_cli_core::commands::CliInfo;
 
 const CLI_INFO: CliInfo<'static> = CliInfo {
@@ -38,10 +38,6 @@ pub fn load_config() -> Result<Config> {
 
 pub fn save_config(cfg: &Config) -> Result<()> {
     oboron_cli_core::save_config(cfg)
-}
-
-pub fn load_profile(name: &str) -> Result<KeyProfile> {
-    oboron_cli_core::load_profile(name)
 }
 
 // ---------------------------------------------------------------------------
