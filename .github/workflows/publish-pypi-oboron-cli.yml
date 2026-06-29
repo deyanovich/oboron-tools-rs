@@ -90,8 +90,9 @@ jobs:
           python - <<'PY'
           import re, pathlib
           p = pathlib.Path("Cargo.toml")
-          p.write_text(re.sub(r' path = "\.\./[^"]*",', '', p.read_text()))
-          print(p.read_text())
+          s = re.sub(r' path = "\.\./[^"]*",', '', p.read_text(encoding="utf-8"))
+          p.write_text(s, encoding="utf-8")
+          print(s)
           PY
 
       - name: Build wheel
@@ -129,7 +130,8 @@ jobs:
           python - <<'PY'
           import re, pathlib
           p = pathlib.Path("Cargo.toml")
-          p.write_text(re.sub(r' path = "\.\./[^"]*",', '', p.read_text()))
+          s = re.sub(r' path = "\.\./[^"]*",', '', p.read_text(encoding="utf-8"))
+          p.write_text(s, encoding="utf-8")
           PY
 
       - name: Build sdist
