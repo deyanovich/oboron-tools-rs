@@ -1,0 +1,40 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "obu-cli"
+dynamic = ["version"]
+requires-python = ">=3.8"
+description = "Standalone install of the obu CLI binary (`obu`) via pip — the oboron family's UNAUTHENTICATED obfuscation codecs (upcbc, zdcbc). NOT cryptographically secure; for obfuscation only, never confidentiality."
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+authors = [
+    { name = "Bojan Đuričković" }
+]
+keywords = ["cli", "obfuscation", "encoding", "oboron", "unauthenticated"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://oboron.org/"
+Repository = "https://gitlab.com/oboron/oboron-tools-rs"
+Documentation = "https://oboron.org/"
+Changelog = "https://gitlab.com/oboron/oboron-tools-rs/-/blob/master/obu-cli/CHANGELOG.md"
+"Source (Rust crate)" = "https://crates.io/crates/obu-cli"
+
+[tool.maturin]
+# Bin-only wheel: the wrapped Rust crate's `[[bin]] name = "obu"`
+# is packaged into the wheel's scripts payload; `pip install obu-cli`
+# drops the `obu` binary on $PATH. No Python module ships in this
+# distribution.
+manifest-path = "../obu-cli/Cargo.toml"
+bindings = "bin"
+strip = true

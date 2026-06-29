@@ -1,0 +1,163 @@
+name: Publish obu-cli to PyPI
+
+# Triggers on `obu-cli-py/v*` tag pushes to this GitHub mirror.
+# Builds the full wheel matrix (5 platforms + sdist) for the
+# `obu-cli-py/` package and publishes atomically to PyPI as
+# `obu-cli` via OIDC trusted publishing — no API token needed on
+# the GitHub side.
+#
+# The wheel is bin-only: it ships the `obu` Rust binary from the
+# sibling `obu-cli/` crate (the oboron family's UNAUTHENTICATED
+# obfuscation layer) as a wheel scripts payload. The pyproject.toml
+# at `obu-cli-py/pyproject.toml` points maturin at
+# `../obu-cli/Cargo.toml` via `[tool.maturin] manifest-path`; the
+# workflow just `cd`s into `obu-cli-py/` and lets maturin pick it up.
+#
+# One-time setup required before the first publish:
+#
+# 1. On PyPI (https://pypi.org/manage/project/obu-cli/settings/publishing/):
+#    Add a Trusted Publisher with:
+#      Owner:        deyanovich
+#      Repository:   oboron-tools-rs
+#      Workflow:     publish-pypi-obu-cli.yml
+#      Environment:  pypi
+#
+#    `obu-cli` is a new PyPI project; the Trusted Publisher must be
+#    added as a "pending publisher" before the first run creates it.
+#
+# 2. On GitHub (Settings → Environments on this repo):
+#    Create an environment named `pypi`. Optional protection rules
+#    (e.g. require approval for deployment) can be added there.
+
+on:
+  push:
+    tags:
+      - "obu-cli-py/v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-wheels:
+    name: Build wheels (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # The workspace path-deps the sibling library crates for local
+      # development; they are absent on a CI runner, and cargo will not
+      # fall back to the registry for a {path, version} dep. Strip the
+      # local `../` path attributes so the wheel is built against the
+      # published crates.io releases (oboron-cli-core's in-workspace
+      # path has no `../` and is preserved). `-X utf8` keeps it portable
+      # across the Linux / macOS / Windows matrix (the Windows runner
+      # defaults to cp1252, and Cargo.toml carries a non-ASCII author).
+      - name: Build against published libraries (strip local path-deps)
+        shell: bash
+        run: |
+          python -X utf8 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("Cargo.toml")
+          s = re.sub(r' path = "\.\./[^"]*",', '', p.read_text(encoding="utf-8"))
+          p.write_text(s, encoding="utf-8")
+          PY
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: obu-cli-py
+          target: ${{ matrix.target }}
+          args: >-
+            --release
+            --strip
+            --out dist
+          manylinux: auto
+          python-version: "3.12"
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.target }}
+          path: obu-cli-py/dist/*.whl
+
+  build-sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build against published libraries (strip local path-deps)
+        shell: bash
+        run: |
+          python -X utf8 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("Cargo.toml")
+          s = re.sub(r' path = "\.\./[^"]*",', '', p.read_text(encoding="utf-8"))
+          p.write_text(s, encoding="utf-8")
+          PY
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: obu-cli-py
+          command: sdist
+          args: --out dist
+
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: obu-cli-py/dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect dist files
+        run: |
+          mkdir dist
+          find artifacts -type f \( -name "*.whl" -o -name "*.tar.gz" \) -exec cp {} dist/ \;
+          ls -la dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
