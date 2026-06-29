@@ -4,6 +4,38 @@ All notable changes to `obcrypt-cli` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] — 2026-06-29
+
+First stable release, tracking `obcrypt` 1.0.0 — the
+authenticated-only core. Keys are canonical hex only (128 hex
+characters; legacy base64 keys are no longer accepted), and
+`decrypt` requires the scheme explicitly — obcrypt ciphertext
+carries no scheme marker, so there is no auto-detection.
+
+## [1.0.0-rc1] — 2026-06-16
+
+Tracks `obcrypt` 1.0.0-rc1 — the authenticated-only core. The
+scheme namespace is cut to the four authenticated schemes, keys
+are hex-only, and `decrypt` now requires the scheme explicitly.
+
+### Changed
+
+- **Schemes renamed** to `dsiv` / `psiv` / `dgcmsiv` / `pgcmsiv`
+  (formerly `aasv` / `apsv` / `aags` / `apgs`).
+- **`decrypt` now requires the scheme** — supplied via
+  `-s` / `--scheme` or the config default. obcrypt ciphertext
+  carries no scheme marker, so there is no auto-detection.
+- **Keys are hex-only** — 128 hex characters. Base64 `--key`
+  values are no longer accepted.
+
+### Removed
+
+- **The `upbc` scheme is removed.**
+
+### Licensing
+
+- Dual-licensed `MIT OR Apache-2.0`.
+
 ## [0.1.0] — 2026-05-23
 
 Initial public release of the `obcrypt` binary — a command-line

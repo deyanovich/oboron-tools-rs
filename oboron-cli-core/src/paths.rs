@@ -1,9 +1,9 @@
-//! Path resolution for the `~/.oboron/` directory tree.
+//! Path resolution for the per-binary config directory tree
+//! (`~/.oboron/` for ob/obcrypt, `~/.obu/` for obu; see [`crate::env`]).
 
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
-const CONFIG_DIR: &str = ".oboron";
 const PROFILES_SUBDIR: &str = "profiles";
 const BACKUP_SUBDIR: &str = "bkp";
 const CONFIG_FILENAME: &str = "config.json";
@@ -11,7 +11,7 @@ const CONFIG_FILENAME: &str = "config.json";
 pub fn config_root() -> Result<PathBuf> {
     Ok(dirs::home_dir()
         .ok_or_else(|| anyhow!("could not locate home directory"))?
-        .join(CONFIG_DIR))
+        .join(crate::env::env().config_dir))
 }
 
 pub fn config_path() -> Result<PathBuf> {

@@ -1,20 +1,13 @@
 [package]
 name = "oboron-cli"
-# 0.5.0: hex-canonical secrets for obz, matching ob/obcrypt keys
-# (obz generates/displays/accepts 64-char hex; base64 still
-# accepted transitionally); obz config moves under the shared
-# ~/.oboron/ztier/ (with migration); new `ob keygen` / `obz
-# secretgen`; `ob key` defaults to hex (was deprecated base64)
-# with migrate-on-display.
-# 0.4.0: refactored to consume oboron-cli-core 0.1.0 (shared
-# CLI plumbing lifted out of this crate), and adds the ~/.ob →
-# ~/.oboron config-dir migration with backward-compat symlink
-# plus the eager base64 → hex profile-key migration. Does not
-# track the workspace version; the prior published version
-# (0.3.1) came from the oboron-rs workspace before oboron-cli
-# moved here, and this is the first release published from
-# oboron-tools-rs.
-version = "0.5.0"
+# 1.0.0: implements oboron CLI spec 1.0, tracking oboron 1.0.1. The
+# library is authenticated-only, so this crate produces just the `ob`
+# binary over the four authenticated core schemes — dsiv, psiv,
+# dgcmsiv, pgcmsiv. The unauthenticated-layer CLI (`obu`) is a separate
+# crate. Keys are 128-char hex only; `dec` uses the supplied scheme,
+# never auto-detects, and reports every failure through one uniform
+# error (spec §8). `--version` prints the spec-mandated single line.
+version = "1.0.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -22,59 +15,39 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 authors.workspace = true
-description = "CLI for the oboron protocol — string-in/string-out symmetric encryption with obtext encoding. Produces the `ob` and `obz` binaries."
-keywords = ["cli", "encryption", "oboron", "obfuscation", "base32"]
+description = "CLI for the oboron protocol — string-in/string-out authenticated symmetric encryption with obtext encoding. Produces the `ob` binary."
+keywords = ["cli", "encryption", "oboron", "authenticated", "base32"]
 categories = ["command-line-utilities", "cryptography"]
 readme = "README.md"
 exclude = ["tests/", ".github/"]
 
 [features]
-default = ["all-schemes"]
+default = ["dsiv", "psiv", "dgcmsiv", "pgcmsiv"]
 
-legacy = ["oboron/legacy"]
-zrbcx = ["oboron/zrbcx"]
-zmock = ["oboron/mock"]
-aags = ["oboron/aags"]
-aasv = ["oboron/aasv"]
-upbc = ["oboron/upbc"]
-apgs = ["oboron/apgs"]
-apsv = ["oboron/apsv"]
+# The four authenticated core schemes. Forwarding to oboron/* gates
+# both the wrapper code here and the AES backend pulled by oboron.
+dsiv = ["oboron/dsiv"]
+psiv = ["oboron/psiv"]
+dgcmsiv = ["oboron/dgcmsiv"]
+pgcmsiv = ["oboron/pgcmsiv"]
 mock = ["oboron/mock"]
 
-# Scheme categories (local aggregation — oboron trimmed its own
-# tier-group features at 973a409, so we no longer forward them).
-atier = ["aags", "apgs", "aasv", "apsv"]
-utier = ["upbc"]
-ztier = ["zrbcx", "zmock", "legacy"]
-secure-schemes = ["atier", "utier"]
-authenticated-schemes = ["atier"]
-deterministic-schemes = ["aags", "aasv"]
-probabilistic-schemes = ["apgs", "apsv", "upbc"]
-all-schemes = ["atier", "utier", "ztier"]
+# Scheme categories (local aggregation).
+authenticated-schemes = ["dsiv", "psiv", "dgcmsiv", "pgcmsiv"]
+deterministic-schemes = ["dsiv", "dgcmsiv"]
+probabilistic-schemes = ["psiv", "pgcmsiv"]
 
 [[bin]]
 name = "ob"
 path = "src/main.rs"
 
-[[bin]]
-name = "obz"
-path = "src/obz_main.rs"
-required-features = ["ztier"]
-
 [dependencies]
-oboron = { workspace = true, features = ["keyless", "base64-keys"] }
+oboron = { workspace = true, features = ["keyless"] }
 oboron-cli-core.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
-data-encoding.workspace = true
-dirs.workspace = true
-hex.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.0"
-tempfile = "3.8"
-clap-markdown = "0.1.5"

@@ -1,5 +1,5 @@
 //! Cross-implementation conformance test suite for the oboron
-//! protocol CLI surface (`ob`, `obz`, `obcrypt`).
+//! protocol CLI surface (`ob`, `obcrypt`).
 //!
 //! Two entry points:
 //!
@@ -9,10 +9,10 @@
 //!   resolved via `$PATH`).
 //! - **Binary**: `cargo install oboron-cli-conformance` produces
 //!   `oboron-cli-conformance`, a CLI driver that takes
-//!   `--ob <path>` / `--obz <path>` / `--obcrypt <path>` overrides
+//!   `--ob <path>` / `--obcrypt <path>` overrides
 //!   and runs the same `run_*` functions, intended for
 //!   alternative-language implementations to validate their
-//!   `ob`/`obz`/`obcrypt` against the canonical vectors.
+//!   `ob`/`obcrypt` against the canonical vectors.
 
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -20,16 +20,28 @@ use std::path::PathBuf;
 pub mod smoke;
 pub mod vectors;
 
-pub use smoke::{run_ob_smoke, run_obz_smoke};
-pub use vectors::{
-    run_ob_vectors, run_obcrypt_vectors, run_obz_legacy_vectors,
-    run_obz_ztier_vectors,
-};
+pub use smoke::run_ob_smoke;
+pub use vectors::{run_ob_negative, run_ob_vectors, run_obcrypt_vectors};
+
+/// Returns `true` if `bin` can be spawned (probes `<bin> --version`).
+///
+/// The `tests/*.rs` wrappers use this to **skip loudly** when the
+/// binary under test is not installed — a conformance suite cannot
+/// validate a binary that is absent, and a hard spawn failure would
+/// read as a real conformance failure. CI is expected to install the
+/// binaries (or invoke the `oboron-cli-conformance` binary with
+/// explicit `--ob` / `--obcrypt` paths) so coverage is not skipped.
+pub fn binary_available(bin: &std::path::Path) -> bool {
+    std::process::Command::new(bin)
+        .arg("--version")
+        .output()
+        .is_ok()
+}
 
 /// Canonical hardcoded test key (hex). Matches
 /// `oboron::HARDCODED_KEY_HEX`. Inlined so the conformance suite
 /// has no dep on the implementation under test. The spec defines
-/// this value in `CLI.md §8`.
+/// this value in `CLI.md §9` (Fixed Public Test Key).
 pub const HARDCODED_KEY_HEX: &str = concat!(
     "38128463", "3d02ea5f", "35df8596", "b5cc4218",
     "31006046", "8e8b4654", "55a41517", "4ea6e966",
@@ -41,29 +53,28 @@ pub const HARDCODED_KEY_HEX: &str = concat!(
 /// `cargo install`-ed binary works without external file lookups.
 pub const TEST_VECTORS_JSONL: &str =
     include_str!("../tests/vectors/test-vectors.jsonl");
-pub const ZTIER_VECTORS_JSONL: &str =
-    include_str!("../tests/vectors/ztier-test-vectors.jsonl");
-pub const LEGACY_VECTORS_JSONL: &str =
-    include_str!("../tests/vectors/legacy-test-vectors.jsonl");
+
+/// Embedded negative-vector file (core schemes): inputs that MUST fail
+/// `dec` / `enc` as an operation failure with status `1` (CLI.md §10).
+pub const NEGATIVE_TEST_VECTORS_JSONL: &str =
+    include_str!("../tests/vectors/negative-test-vectors.jsonl");
 
 /// Runtime configuration shared by every `run_*` function.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub ob: PathBuf,
-    pub obz: PathBuf,
     pub obcrypt: PathBuf,
     pub schemes: SchemeFilter,
 }
 
 impl Config {
-    /// Default config: resolve `ob`/`obz`/`obcrypt` via `$PATH`. Used
+    /// Default config: resolve `ob`/`obcrypt` via `$PATH`. Used
     /// by both `cargo test` (where binaries are expected to be
     /// pre-installed) and the conformance binary (when no
     /// override flags are passed).
     pub fn from_path() -> Self {
         Self {
             ob: "ob".into(),
-            obz: "obz".into(),
             obcrypt: "obcrypt".into(),
             schemes: SchemeFilter::all(),
         }
@@ -71,10 +82,6 @@ impl Config {
 
     pub fn with_ob(mut self, ob: PathBuf) -> Self {
         self.ob = ob;
-        self
-    }
-    pub fn with_obz(mut self, obz: PathBuf) -> Self {
-        self.obz = obz;
         self
     }
     pub fn with_obcrypt(mut self, obcrypt: PathBuf) -> Self {
@@ -88,41 +95,32 @@ impl Config {
 }
 
 /// Which schemes to exercise. Default: everything compiled in
-/// (controlled by the `aags`/`aasv`/`apgs`/`apsv`/`upbc`/`ztier`
+/// (controlled by the `dgcmsiv`/`dsiv`/`pgcmsiv`/`psiv`
 /// crate features).
 #[derive(Debug, Clone, Copy)]
 pub struct SchemeFilter {
-    pub aags: bool,
-    pub aasv: bool,
-    pub apgs: bool,
-    pub apsv: bool,
-    pub upbc: bool,
-    pub zrbcx: bool,
-    pub legacy: bool,
+    pub dgcmsiv: bool,
+    pub dsiv: bool,
+    pub pgcmsiv: bool,
+    pub psiv: bool,
 }
 
 impl SchemeFilter {
     pub fn all() -> Self {
         Self {
-            aags: cfg!(feature = "aags"),
-            aasv: cfg!(feature = "aasv"),
-            apgs: cfg!(feature = "apgs"),
-            apsv: cfg!(feature = "apsv"),
-            upbc: cfg!(feature = "upbc"),
-            zrbcx: cfg!(feature = "ztier"),
-            legacy: cfg!(feature = "ztier"),
+            dgcmsiv: cfg!(feature = "dgcmsiv"),
+            dsiv: cfg!(feature = "dsiv"),
+            pgcmsiv: cfg!(feature = "pgcmsiv"),
+            psiv: cfg!(feature = "psiv"),
         }
     }
 
     pub fn enabled(&self, scheme: &str) -> bool {
         match scheme {
-            "aags" => self.aags,
-            "aasv" => self.aasv,
-            "apgs" => self.apgs,
-            "apsv" => self.apsv,
-            "upbc" => self.upbc,
-            "zrbcx" => self.zrbcx,
-            "legacy" => self.legacy,
+            "dgcmsiv" => self.dgcmsiv,
+            "dsiv" => self.dsiv,
+            "pgcmsiv" => self.pgcmsiv,
+            "psiv" => self.psiv,
             _ => false,
         }
     }
@@ -237,64 +235,11 @@ pub(crate) struct TestVector {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct MetaEntry {
-    #[serde(rename = "type")]
-    pub entry_type: String,
-    pub secret: Option<String>,
-}
-
 pub(crate) fn parse_vectors_jsonl(data: &str) -> Vec<TestVector> {
     data.lines()
         .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| {
-            // skip meta lines silently — only legacy file has one
-            if l.contains("\"type\":\"meta\"")
-                || l.contains("\"type\": \"meta\"")
-            {
-                None
-            } else {
-                Some(
-                    serde_json::from_str(l).expect("parse vector"),
-                )
-            }
-        })
+        .map(|l| serde_json::from_str(l).expect("parse vector"))
         .collect()
-}
-
-pub(crate) fn parse_legacy_jsonl(data: &str) -> (String, Vec<TestVector>) {
-    let mut lines = data.lines().filter(|l| !l.trim().is_empty());
-    let first = lines.next().expect("empty legacy vectors file");
-    let (secret, extra) =
-        if let Ok(meta) = serde_json::from_str::<MetaEntry>(first) {
-            if meta.entry_type == "meta" {
-                (
-                    meta.secret.expect("meta entry missing secret"),
-                    None,
-                )
-            } else {
-                (
-                    String::new(),
-                    Some(
-                        serde_json::from_str::<TestVector>(first)
-                            .expect("parse first vector"),
-                    ),
-                )
-            }
-        } else {
-            (
-                String::new(),
-                Some(
-                    serde_json::from_str::<TestVector>(first)
-                        .expect("parse first vector"),
-                ),
-            )
-        };
-    let mut vectors: Vec<TestVector> = extra.into_iter().collect();
-    vectors.extend(lines.map(|l| {
-        serde_json::from_str::<TestVector>(l).expect("parse vector")
-    }));
-    (secret, vectors)
 }
 
 pub(crate) fn strip_trailing_newline(s: String) -> String {

@@ -4,14 +4,45 @@ All notable changes to `oboron-cli-core` are documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-`oboron-cli-core` is an internal-API crate consumed by
-[`oboron-cli`](https://gitlab.com/oboron/oboron-rs) (the `ob`
-binary) and
+`oboron-cli-core` is the shared-plumbing crate consumed by
+[`oboron-cli`](https://crates.io/crates/oboron-cli) (the `ob`
+binary),
 [`obcrypt-cli`](https://crates.io/crates/obcrypt-cli) (the
-`obcrypt` binary). Published on crates.io because the consuming
-binaries depend on it via the registry for downstream installation;
-the API is shaped around what those two binaries need and may
-change between minor versions.
+`obcrypt` binary), and
+[`obu-cli`](https://crates.io/crates/obu-cli) (the `obu`
+binary). Published on crates.io because the consuming binaries
+depend on it via the registry for downstream installation. As of
+1.0 the public API is stable under SemVer; the growable types
+(`Config`, `KeyProfile`, `CliEnv`) are `#[non_exhaustive]` with
+`new()` constructors, so fields can be added without a breaking
+change.
+
+## [1.0.0] — 2026-06-29
+
+First stable release. The public API is now sealed under SemVer.
+
+### Removed
+
+- **Legacy base64 key API** — `KeyFormat`,
+  `normalize_key_classify`, `LoadedKey`, and `load_profile_key`
+  are gone. Keys and secrets are canonical hex only; base64
+  acceptance and the eager base64 → hex migration are no longer
+  part of the surface. `normalize_key_to_hex` and
+  `load_profile_key_as_hex` remain as the hex-only entry points.
+
+### Changed
+
+- **Sealed public types** — `Config`, `KeyProfile`, and `CliEnv`
+  are `#[non_exhaustive]` and gain `new()` constructors, so future
+  fields can be added without breaking downstream callers.
+
+### Added
+
+- **Per-binary environment** — a new `env` module exposes
+  `CliEnv`, the per-binary environment (config root, defaults)
+  threaded through the command handlers. This is what lets the
+  unauthenticated `obu` CLI reuse the same plumbing as `ob` and
+  `obcrypt`.
 
 ## [0.1.0] — 2026-05-23
 

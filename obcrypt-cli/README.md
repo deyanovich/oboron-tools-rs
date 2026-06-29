@@ -21,7 +21,7 @@ obcrypt <SUBCOMMAND>
 
 Subcommands:
   encrypt (e)   Encrypt plaintext bytes under a scheme
-  decrypt (d)   Decrypt ciphertext bytes (auto-detects scheme by default)
+  decrypt (d)   Decrypt ciphertext bytes (scheme required)
   keygen  (k)   Generate a fresh random 128-character hex key
   init    (i)   Initialize configuration with a fresh profile
   config  (c)   Show or update configuration
@@ -37,20 +37,20 @@ Subcommands:
 $ obcrypt keygen
 50947ce0edfc65f791543ad169590a877a52ca591e09…
 
-# 2. Encrypt under aasv (raw ciphertext bytes — pipe to a file)
+# 2. Encrypt under dsiv (raw ciphertext bytes — pipe to a file)
 $ KEY=$(obcrypt keygen)
-$ obcrypt encrypt --scheme aasv --key "$KEY" "hello world" > ct.bin
+$ obcrypt encrypt --scheme dsiv --key "$KEY" "hello world" > ct.bin
 
 # 2'. Or get terminal-friendly hex output with -x
-$ obcrypt encrypt -x -s aasv -k "$KEY" "hello world"
+$ obcrypt encrypt -x -s dsiv -k "$KEY" "hello world"
 ab567ee2b3fcb75d9fcd40e44d66cf0e46653e557338ca98ffa0c3aab8
 
-# 3. Decrypt — scheme auto-detected from the trailing marker
-$ obcrypt decrypt -X -k "$KEY" ab567ee2b3fc…aab8
+# 3. Decrypt — the scheme must be supplied (no marker, no auto-detection)
+$ obcrypt decrypt -X -s dsiv -k "$KEY" ab567ee2b3fc…aab8
 hello world
 
 # 3'. Or pipe the raw bytes back in
-$ obcrypt decrypt -k "$KEY" < ct.bin
+$ obcrypt decrypt -s dsiv -k "$KEY" < ct.bin
 hello world
 ```
 
@@ -65,11 +65,9 @@ Args:
   [TEXT]    Plaintext (reads stdin if absent).
 
 Options:
-  -s, --scheme <SCHEME>    aasv | aags | apsv | apgs | upbc
+  -s, --scheme <SCHEME>    dsiv | dgcmsiv | psiv | pgcmsiv
                            Required if no default is set in config.
-  -k, --key <KEY>          128 hex chars (canonical) or 86 base64 chars
-                           (legacy — auto-detected and accepted during
-                           the deprecation period).
+  -k, --key <KEY>          128 hex chars.
   -p, --profile <NAME>     Use ~/.oboron/profiles/<NAME>.json.
   -x, --hex                Hex-encode the ciphertext on output. Without
                            this flag the ciphertext is raw bytes.
@@ -92,11 +90,10 @@ obcrypt decrypt [OPTIONS] [TEXT]
 
 Same option set as `encrypt`, but:
 
-  -s, --scheme <SCHEME>    OPTIONAL on decrypt.
-                           - Given:   the marker is verified to match
-                             this scheme (rejected otherwise).
-                           - Omitted: the scheme is auto-detected from
-                             the trailing marker in the payload.
+  -s, --scheme <SCHEME>    REQUIRED on decrypt (unless a default is set
+                           in config). obcrypt ciphertext carries no
+                           scheme marker, so the scheme cannot be
+                           auto-detected — it must be supplied.
 
   -x, --hex                Hex-encode the plaintext on output (terminal-
                            safe display when the plaintext is binary).
@@ -114,20 +111,20 @@ options — keys are bytes, no scheme or other metadata to attach.
 
 ```bash
 $ obcrypt keygen > my.key
-$ obcrypt encrypt -s aasv -k "$(cat my.key)" hello
+$ obcrypt encrypt -s dsiv -k "$(cat my.key)" hello
 ```
 
 #### `init` / `i`, `config` / `c`, `profile` / `p`, `key`
 
 Profile / config management for `~/.oboron/`, shared with
-[`ob`](https://gitlab.com/oboron/oboron-rs):
+[`ob`](https://crates.io/crates/oboron-cli):
 
 ```bash
 $ obcrypt init                       # create the default profile
 $ obcrypt profile create work        # add a second profile
 $ obcrypt profile activate work      # switch active profile
 $ obcrypt config show                # print active config + key
-$ obcrypt config set --scheme apsv   # change the default scheme
+$ obcrypt config set --scheme psiv   # change the default scheme
 $ obcrypt key                        # print the active profile's key
 ```
 
@@ -143,7 +140,7 @@ $ obcrypt completions fish > ~/.config/fish/completions/obcrypt.fish
 
 In priority order:
 
-1. **`--key <KEY>`** — direct (hex or legacy base64).
+1. **`--key <KEY>`** — direct (128 hex chars).
 2. **`--profile <NAME>`** — read `~/.oboron/profiles/<NAME>.json`.
 3. **Active profile from `~/.oboron/config.json`** — if neither
    `--key` nor `--profile` was given, the active profile name is
@@ -154,7 +151,7 @@ If none of those resolve, `obcrypt` errors with a hint pointing at
 
 ## Shared config dir
 
-`obcrypt` and [`ob`](https://gitlab.com/oboron/oboron-rs) share
+`obcrypt` and [`ob`](https://crates.io/crates/oboron-cli) share
 `~/.oboron/`:
 
 ```text
@@ -168,9 +165,7 @@ If none of those resolve, `obcrypt` errors with a hint pointing at
 Both binaries can read and write this directory; writes preserve any
 fields they don't recognize so the two CLIs don't clobber each
 other's settings (e.g. `ob`'s `encoding` field is left intact when
-`obcrypt config set` updates the scheme). Keys in legacy profiles
-(86-char base64) are auto-detected and accepted; new profiles use
-hex.
+`obcrypt config set` updates the scheme). Keys are 128-char hex.
 
 ## Differences from `oboron-cli`'s `ob`
 
@@ -179,10 +174,10 @@ hex.
 | Output | raw bytes (`-x` for hex display) | obtext string |
 | Encoding | none — protocol-level encoding is `ob`'s job | protocol-level (`c32`/`b32`/`b64`/`hex`) |
 | UTF-8 validation | none | yes |
-| Schemes | `a`-tier + `u`-tier | `a`-tier + `u`-tier + `z`-tier |
+| Schemes | the authenticated core schemes | the authenticated core schemes |
 | Subcommands | `encrypt`/`decrypt` (full names) | `enc`/`dec` (short names) |
 | Aliases | `e` / `d` / `k` | `e` / `d` / `k` |
-| Keys | hex (legacy base64 accepted) | hex (legacy base64 accepted) |
+| Keys | hex (128 chars) | hex (128 chars) |
 
 Use `obcrypt` for binary contexts, embedded use, low-level
 integration, or when you don't want the obtext encoding layer. Use
@@ -193,9 +188,24 @@ integration, or when you don't want the obtext encoding layer. Use
 The `obcrypt` binary's encrypt / decrypt behavior is validated
 end-to-end against the canonical oboron test vectors by
 [`oboron-cli-conformance`](https://crates.io/crates/oboron-cli-conformance)
-v0.2.0 — the same cross-implementation harness used to qualify
+1.0.0 — the same cross-implementation harness used to qualify
 alternative-language implementations of the protocol.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Licensed under either of
+
+- Apache License, Version 2.0
+  ([LICENSE-APACHE](LICENSE-APACHE) or
+  <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution
+intentionally submitted for inclusion in the work by you, as
+defined in the Apache-2.0 license, shall be dual licensed as
+above, without any additional terms or conditions.

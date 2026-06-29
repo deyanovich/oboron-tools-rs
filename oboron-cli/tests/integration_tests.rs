@@ -1,836 +1,499 @@
-#![allow(deprecated)]
+//! Integration tests for the `ob` binary against oboron protocol
+//! spec 1.0. Every scheme is authenticated; keys are 128-char hex;
+//! `dec` uses the supplied scheme and never auto-detects.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
 use std::path::PathBuf;
 
 fn test_home_dir() -> PathBuf {
     let test_id = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_micros();
+        .as_nanos();
     PathBuf::from(format!("./test_home_{}", test_id))
 }
 
 fn cleanup_test_home(dir: &PathBuf) {
     if dir.exists() {
-        let _ = fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 
-// Valid 86-character base64 key (64 bytes = 512 bits)
-const TEST_KEY_B64: &str =
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-const TEST_KEY_B64_ALT: &str =
-    "ZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+// Two valid 128-character hex keys (64 bytes / 512 bits each).
+const TEST_KEY_HEX: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+const TEST_KEY_HEX_ALT: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+
+fn ob() -> Command {
+    Command::cargo_bin("ob").unwrap()
+}
+
+// --- enc with the fixed public test key (-K / --keyless) --------------
 
 #[test]
-fn test_enc_keyless() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
+fn test_enc_keyless_default_format() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
         .arg("enc")
         .arg("-K")
-        .arg("--aasv")
+        .arg("test123")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty().not());
+    cleanup_test_home(&home);
+}
+
+#[cfg(feature = "dsiv")]
+#[test]
+fn test_enc_keyless_dsiv_b32() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
+        .arg("enc")
+        .arg("-K")
+        .arg("--dsiv")
         .arg("--b32")
         .arg("test123")
         .assert()
         .success()
         .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "apsv")]
+#[cfg(feature = "psiv")]
 #[test]
-fn test_enc_keyless_apsv() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
+fn test_enc_keyless_psiv() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
         .arg("enc")
         .arg("-K")
-        .arg("--apsv")
+        .arg("--psiv")
         .arg("--b32")
         .arg("test123")
         .assert()
         .success()
         .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "aasv")]
+// --- scheme short flags: -s/-S/-g/-G -----------------------------------
+
+#[cfg(feature = "dsiv")]
 #[test]
-fn test_enc_short_alias_aasv() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
+fn test_enc_short_alias_dsiv() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
         .arg("enc")
         .arg("-K")
         .arg("-s")
         .arg("--b32")
         .arg("test123")
         .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
+        .success();
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "apsv")]
+#[cfg(feature = "psiv")]
 #[test]
-fn test_enc_short_alias_apsv() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
+fn test_enc_short_alias_psiv() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
         .arg("enc")
         .arg("-K")
         .arg("-S")
         .arg("--b32")
         .arg("test123")
         .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
+        .success();
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "apsv")]
+#[cfg(feature = "dgcmsiv")]
 #[test]
-fn test_enc_dec_roundtrip_keyless() {
-    let test_home = test_home_dir();
-
-    // Encode
-    let mut enc_cmd = Command::cargo_bin("ob").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
+fn test_enc_short_alias_dgcmsiv() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
         .arg("enc")
         .arg("-K")
-        .arg("--apsv")
+        .arg("-g")
+        .arg("--b32")
+        .arg("test123")
+        .assert()
+        .success();
+    cleanup_test_home(&home);
+}
+
+#[cfg(feature = "pgcmsiv")]
+#[test]
+fn test_enc_short_alias_pgcmsiv() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
+        .arg("enc")
+        .arg("-K")
+        .arg("-G")
+        .arg("--b32")
+        .arg("test123")
+        .assert()
+        .success();
+    cleanup_test_home(&home);
+}
+
+// --- encoding short flags: -c/-b/-B/-x ---------------------------------
+
+#[cfg(feature = "dsiv")]
+#[test]
+fn test_enc_different_encodings() {
+    let home = test_home_dir();
+    for enc in ["-c", "-b", "-B", "-x"] {
+        ob().env("HOME", home.as_os_str())
+            .arg("enc")
+            .arg("-K")
+            .arg("--dsiv")
+            .arg(enc)
+            .arg("test")
+            .assert()
+            .success();
+    }
+    cleanup_test_home(&home);
+}
+
+// --- roundtrip with the public test key (probabilistic) ----------------
+
+#[cfg(feature = "psiv")]
+#[test]
+fn test_enc_dec_roundtrip_keyless_psiv() {
+    let home = test_home_dir();
+
+    let enc_out = ob()
+        .env("HOME", home.as_os_str())
+        .arg("enc")
+        .arg("-K")
+        .arg("--psiv")
         .arg("--b32")
         .arg("hello_world")
         .output()
         .unwrap();
+    assert!(enc_out.status.success());
+    let ot = String::from_utf8(enc_out.stdout).unwrap().trim().to_string();
+    assert!(!ot.is_empty());
 
-    assert!(enc_output.status.success());
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
-    assert!(!encd.is_empty());
-
-    // Decode - use same scheme as enc for autodetection
-    let mut dec_cmd = Command::cargo_bin("ob").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
+    ob().env("HOME", home.as_os_str())
         .arg("dec")
         .arg("-K")
-        .arg("--apsv")
+        .arg("--psiv")
         .arg("--b32")
-        .arg(&encd)
+        .arg(&ot)
         .assert()
         .success()
         .stdout(predicate::str::contains("hello_world"));
 
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[test]
-fn test_enc_with_explicit_key() {
-    let test_home = test_home_dir();
+// --- explicit 128-hex --key -------------------------------------------
 
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
+#[cfg(feature = "dsiv")]
+#[test]
+fn test_enc_dec_with_explicit_hex_key() {
+    let home = test_home_dir();
+
+    let enc_out = ob()
+        .env("HOME", home.as_os_str())
         .arg("enc")
         .arg("--key")
-        .arg(TEST_KEY_B64)
-        .arg("--aasv")
-        .arg("--b32")
-        .arg("test_data")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "apsv")]
-#[test]
-fn test_enc_with_explicit_key_apsv() {
-    let test_home = test_home_dir();
-
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("--key")
-        .arg(TEST_KEY_B64)
-        .arg("--apsv")
-        .arg("--b32")
-        .arg("test_data")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-
-    cleanup_test_home(&test_home);
-}
-
-#[test]
-fn test_enc_dec_with_explicit_key() {
-    let test_home = test_home_dir();
-
-    // Encode with aags
-    let mut enc_cmd = Command::cargo_bin("ob").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("--key")
-        .arg(TEST_KEY_B64_ALT)
-        .arg("--aasv")
+        .arg(TEST_KEY_HEX_ALT)
+        .arg("--dsiv")
         .arg("--b32")
         .arg("sensitive_data")
         .output()
         .unwrap();
+    assert!(enc_out.status.success());
+    let ot = String::from_utf8(enc_out.stdout).unwrap().trim().to_string();
 
-    assert!(enc_output.status.success());
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
-
-    // Decode - use same scheme as enc
-    let mut dec_cmd = Command::cargo_bin("ob").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
+    ob().env("HOME", home.as_os_str())
         .arg("dec")
         .arg("--key")
-        .arg(TEST_KEY_B64_ALT)
-        .arg("--aasv") // Use same scheme as enc
+        .arg(TEST_KEY_HEX_ALT)
+        .arg("--dsiv")
         .arg("--b32")
-        .arg(&encd)
+        .arg(&ot)
         .assert()
         .success()
         .stdout(predicate::str::contains("sensitive_data"));
 
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "aags")]
+#[cfg(feature = "dgcmsiv")]
 #[test]
-fn test_enc_dec_with_explicit_key_aags() {
-    let test_home = test_home_dir();
+fn test_enc_dec_with_explicit_hex_key_dgcmsiv() {
+    let home = test_home_dir();
 
-    // Encode with aags
-    let mut enc_cmd = Command::cargo_bin("ob").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
+    let enc_out = ob()
+        .env("HOME", home.as_os_str())
         .arg("enc")
         .arg("--key")
-        .arg(TEST_KEY_B64_ALT)
-        .arg("--aags")
+        .arg(TEST_KEY_HEX_ALT)
+        .arg("--dgcmsiv")
         .arg("--b32")
         .arg("sensitive_data")
         .output()
         .unwrap();
+    assert!(enc_out.status.success());
+    let ot = String::from_utf8(enc_out.stdout).unwrap().trim().to_string();
 
-    assert!(enc_output.status.success());
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
-
-    // Decode - use same scheme as enc
-    let mut dec_cmd = Command::cargo_bin("ob").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
+    ob().env("HOME", home.as_os_str())
         .arg("dec")
         .arg("--key")
-        .arg(TEST_KEY_B64_ALT)
-        .arg("--aags") // Use same scheme as enc
+        .arg(TEST_KEY_HEX_ALT)
+        .arg("--dgcmsiv")
         .arg("--b32")
-        .arg(&encd)
+        .arg(&ot)
         .assert()
         .success()
         .stdout(predicate::str::contains("sensitive_data"));
 
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "aags")]
-#[cfg(feature = "aasv")]
-#[cfg(feature = "upbc")]
-#[cfg(feature = "apgs")]
-#[cfg(feature = "apsv")]
+// --- a non-hex / wrong-length key is rejected --------------------------
+
 #[test]
-fn test_enc_different_schemes() {
-    let test_home = test_home_dir();
-    let schemes = vec!["--aags", "--aasv", "--upbc", "--apgs", "--apsv"];
-
-    for scheme in schemes {
-        let mut cmd = Command::cargo_bin("ob").unwrap();
-        cmd.env("HOME", test_home.as_os_str())
-            .arg("enc")
-            .arg("-K")
-            .arg(scheme)
-            .arg("--b32")
-            .arg("test")
-            .assert()
-            .success();
-    }
-
-    cleanup_test_home(&test_home);
+fn test_enc_rejects_short_key() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
+        .arg("enc")
+        .arg("--key")
+        .arg("deadbeef") // too short to be a 128-hex key
+        .arg("test")
+        .assert()
+        .failure();
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "aasv")]
-#[test]
-fn test_enc_different_encodings() {
-    let test_home = test_home_dir();
-    let encodings = vec!["--b32", "--b64", "--hex"];
+// --- --format string and its mutual exclusion --------------------------
 
-    for encoding in encodings {
-        let mut cmd = Command::cargo_bin("ob").unwrap();
-        cmd.env("HOME", test_home.as_os_str())
-            .arg("enc")
-            .arg("-K")
-            .arg("--aasv")
-            .arg(encoding)
-            .arg("test")
-            .assert()
-            .success();
-    }
-
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "apsv")]
-#[cfg(feature = "aags")]
-#[cfg(feature = "aasv")]
+#[cfg(feature = "dsiv")]
 #[test]
 fn test_enc_with_format_string() {
-    let test_home = test_home_dir();
-    let formats = vec!["apsv.b32", "aags.b64", "aasv.hex"];
-
-    for format in formats {
-        let mut cmd = Command::cargo_bin("ob").unwrap();
-        cmd.env("HOME", test_home.as_os_str())
+    let home = test_home_dir();
+    for fmt in ["dsiv.b32", "dsiv.b64", "dsiv.hex"] {
+        ob().env("HOME", home.as_os_str())
             .arg("enc")
             .arg("-K")
             .arg("--format")
-            .arg(format)
+            .arg(fmt)
             .arg("test_format")
             .assert()
             .success();
     }
-
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "aasv")]
+#[cfg(feature = "dsiv")]
 #[test]
-fn test_enc_short_alias_b64() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
+fn test_format_conflicts_with_scheme_flag() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
         .arg("enc")
         .arg("-K")
-        .arg("--aasv")
-        .arg("-B")
-        .arg("test123")
+        .arg("--format")
+        .arg("dsiv.b32")
+        .arg("--dsiv")
+        .arg("test")
         .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
+        .failure();
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "aasv")]
+// --- dec does NOT auto-detect the scheme -------------------------------
+
+#[cfg(all(feature = "dsiv", feature = "dgcmsiv"))]
 #[test]
-fn test_enc_short_alias_b32() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
+fn test_dec_does_not_autodetect_scheme() {
+    let home = test_home_dir();
+
+    // Encrypt under dsiv with the public test key.
+    let enc_out = ob()
+        .env("HOME", home.as_os_str())
         .arg("enc")
         .arg("-K")
-        .arg("--aasv")
-        .arg("-b")
-        .arg("test123")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "aasv")]
-#[test]
-fn test_enc_short_alias_c32() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-K")
-        .arg("--aasv")
-        .arg("-c")
-        .arg("test123")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
-}
-
-// Valid 43-character base64 secret (32 bytes)
-const TEST_SECRET_B64: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-
-#[cfg(feature = "zrbcx")]
-#[test]
-fn test_obz_enc_short_alias_zrbcx() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-s")
-        .arg(TEST_SECRET_B64)
-        .arg("-r")
+        .arg("--dsiv")
         .arg("--b32")
-        .arg("test123")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "zrbcx")]
-#[test]
-fn test_obz_enc_short_alias_b32() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-s")
-        .arg(TEST_SECRET_B64)
-        .arg("--zrbcx")
-        .arg("-b")
-        .arg("test123")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "zrbcx")]
-#[test]
-fn test_obz_enc_short_alias_b64() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-s")
-        .arg(TEST_SECRET_B64)
-        .arg("--zrbcx")
-        .arg("-B")
-        .arg("test123")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "zrbcx")]
-#[test]
-fn test_obz_enc_short_alias_c32() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-s")
-        .arg(TEST_SECRET_B64)
-        .arg("--zrbcx")
-        .arg("-c")
-        .arg("test123")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "zrbcx")]
-#[test]
-fn test_obz_enc_combined_short_aliases() {
-    // Test the convenience combined-flag usage: obz e -rb 'abc'
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("e")
-        .arg("-s")
-        .arg(TEST_SECRET_B64)
-        .arg("-rb")
-        .arg("test123")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "upbc")]
-#[test]
-fn test_enc_short_alias_upbc() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-K")
-        .arg("-u")
-        .arg("--b32")
-        .arg("test123")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_empty().not());
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "upbc")]
-#[test]
-fn test_dec_short_alias_upbc() {
-    let test_home = test_home_dir();
-
-    // First encode
-    let mut enc_cmd = Command::cargo_bin("ob").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-K")
-        .arg("-u")
-        .arg("--b32")
-        .arg("hello123")
+        .arg("scheme_locked")
         .output()
         .unwrap();
-    assert!(enc_output.status.success());
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
+    assert!(enc_out.status.success());
+    let ot = String::from_utf8(enc_out.stdout).unwrap().trim().to_string();
 
-    // Decode with -u alias
-    let mut dec_cmd = Command::cargo_bin("ob").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
+    // Decrypting the same obtext while *declaring the wrong scheme*
+    // (dgcmsiv) must fail — dec uses the supplied scheme and does not
+    // trial-decrypt across schemes.
+    ob().env("HOME", home.as_os_str())
         .arg("dec")
         .arg("-K")
-        .arg("-u")
+        .arg("--dgcmsiv")
         .arg("--b32")
-        .arg(&encd)
+        .arg(&ot)
+        .assert()
+        .failure();
+
+    // With the correct scheme it succeeds.
+    ob().env("HOME", home.as_os_str())
+        .arg("dec")
+        .arg("-K")
+        .arg("--dsiv")
+        .arg("--b32")
+        .arg(&ot)
         .assert()
         .success()
-        .stdout(predicate::str::contains("hello123"));
-    cleanup_test_home(&test_home);
+        .stdout(predicate::str::contains("scheme_locked"));
+
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "legacy")]
-#[test]
-fn test_obz_enc_legacy_rejects_b32_flag() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-K")
-        .arg("--legacy")
-        .arg("--b32")
-        .arg("test123")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("--legacy is incompatible with encoding flags"));
-    cleanup_test_home(&test_home);
-}
+// --- $OBORON_KEY (128-hex) --------------------------------------------
 
-#[cfg(feature = "legacy")]
-#[test]
-fn test_obz_enc_legacy_rejects_b64_flag() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-K")
-        .arg("--legacy")
-        .arg("--b64")
-        .arg("test123")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("--legacy is incompatible with encoding flags"));
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "legacy")]
-#[test]
-fn test_obz_enc_legacy_rejects_hex_flag() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-K")
-        .arg("--legacy")
-        .arg("--hex")
-        .arg("test123")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("--legacy is incompatible with encoding flags"));
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "legacy")]
-#[test]
-fn test_obz_enc_legacy_rejects_c32_flag() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("enc")
-        .arg("-K")
-        .arg("--legacy")
-        .arg("--c32")
-        .arg("test123")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("--legacy is incompatible with encoding flags"));
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "legacy")]
-#[test]
-fn test_obz_dec_legacy_rejects_encoding_flags() {
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("dec")
-        .arg("-K")
-        .arg("--legacy")
-        .arg("--b64")
-        .arg("sometext")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("--legacy is incompatible with encoding flags"));
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "aasv")]
+#[cfg(feature = "dsiv")]
 #[test]
 fn test_enc_dec_with_env_key() {
-    let test_home = test_home_dir();
+    let home = test_home_dir();
 
-    // Encode using $OBORON_KEY env var (no ob init)
-    let mut enc_cmd = Command::cargo_bin("ob").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_KEY", TEST_KEY_B64)
+    let enc_out = ob()
+        .env("HOME", home.as_os_str())
+        .env("OBORON_KEY", TEST_KEY_HEX)
         .arg("enc")
-        .arg("--aasv")
+        .arg("--dsiv")
         .arg("--b32")
         .arg("env_key_test")
         .output()
         .unwrap();
-    assert!(enc_output.status.success());
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
+    assert!(
+        enc_out.status.success(),
+        "enc failed: {}",
+        String::from_utf8_lossy(&enc_out.stderr)
+    );
+    let ot = String::from_utf8(enc_out.stdout).unwrap().trim().to_string();
 
-    // Decode using $OBORON_KEY env var
-    let mut dec_cmd = Command::cargo_bin("ob").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_KEY", TEST_KEY_B64)
+    ob().env("HOME", home.as_os_str())
+        .env("OBORON_KEY", TEST_KEY_HEX)
         .arg("dec")
-        .arg("--aasv")
+        .arg("--dsiv")
         .arg("--b32")
-        .arg(&encd)
+        .arg(&ot)
         .assert()
         .success()
         .stdout(predicate::str::contains("env_key_test"));
 
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "aasv")]
+#[cfg(feature = "dsiv")]
 #[test]
 fn test_env_key_overridden_by_flag() {
-    let test_home = test_home_dir();
+    let home = test_home_dir();
 
-    // Encode with explicit --key flag; env var holds a different key
-    let mut enc_cmd = Command::cargo_bin("ob").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_KEY", TEST_KEY_B64_ALT) // env var has different key
+    // env holds one key, --key holds another; --key must win.
+    let enc_out = ob()
+        .env("HOME", home.as_os_str())
+        .env("OBORON_KEY", TEST_KEY_HEX_ALT)
         .arg("enc")
         .arg("--key")
-        .arg(TEST_KEY_B64) // --key flag wins
-        .arg("--aasv")
+        .arg(TEST_KEY_HEX)
+        .arg("--dsiv")
         .arg("--b32")
         .arg("flag_wins_test")
         .output()
         .unwrap();
-    assert!(enc_output.status.success());
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
+    assert!(enc_out.status.success());
+    let ot = String::from_utf8(enc_out.stdout).unwrap().trim().to_string();
 
-    // Decode must use the --key flag key, not the env var key
-    let mut dec_cmd = Command::cargo_bin("ob").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_KEY", TEST_KEY_B64_ALT)
+    ob().env("HOME", home.as_os_str())
+        .env("OBORON_KEY", TEST_KEY_HEX_ALT)
         .arg("dec")
         .arg("--key")
-        .arg(TEST_KEY_B64)
-        .arg("--aasv")
+        .arg(TEST_KEY_HEX)
+        .arg("--dsiv")
         .arg("--b32")
-        .arg(&encd)
+        .arg(&ot)
         .assert()
         .success()
         .stdout(predicate::str::contains("flag_wins_test"));
 
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "aasv")]
-#[test]
-fn test_env_key_without_config() {
-    // Use a fresh HOME with no ~/.ob/ directory at all
-    let test_home = test_home_dir();
+// --- --key conflicts with --keyless -----------------------------------
 
-    let mut enc_cmd = Command::cargo_bin("ob").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_KEY", TEST_KEY_B64)
+#[test]
+fn test_key_and_keyless_conflict() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
         .arg("enc")
-        .arg("--format")
-        .arg("aasv.b32")
-        .arg("no_config_test")
+        .arg("--key")
+        .arg(TEST_KEY_HEX)
+        .arg("-K")
+        .arg("test")
+        .assert()
+        .failure();
+    cleanup_test_home(&home);
+}
+
+// --- --raw framing round-trips exactly (no newline added/stripped) -----
+
+#[cfg(feature = "dsiv")]
+#[test]
+fn test_raw_framing_roundtrip() {
+    let home = test_home_dir();
+
+    let enc_out = ob()
+        .env("HOME", home.as_os_str())
+        .arg("enc")
+        .arg("-K")
+        .arg("--dsiv")
+        .arg("--b32")
+        .arg("--raw")
+        .write_stdin("payload-no-newline")
         .output()
         .unwrap();
-    assert!(
-        enc_output.status.success(),
-        "enc failed: {}",
-        String::from_utf8_lossy(&enc_output.stderr)
-    );
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
+    assert!(enc_out.status.success());
+    // In --raw mode stdout has no trailing newline.
+    assert!(!enc_out.stdout.ends_with(b"\n"));
+    let ot = String::from_utf8(enc_out.stdout).unwrap();
 
-    let mut dec_cmd = Command::cargo_bin("ob").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_KEY", TEST_KEY_B64)
+    let dec_out = ob()
+        .env("HOME", home.as_os_str())
         .arg("dec")
-        .arg("--format")
-        .arg("aasv.b32")
-        .arg(&encd)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("no_config_test"));
-
-    cleanup_test_home(&test_home);
-}
-
-#[cfg(feature = "zrbcx")]
-#[test]
-fn test_obz_enc_dec_with_env_secret() {
-    let test_home = test_home_dir();
-
-    // Encode using $OBORON_SECRET env var (no obz init)
-    let mut enc_cmd = Command::cargo_bin("obz").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_SECRET", TEST_SECRET_B64)
-        .arg("enc")
-        .arg("--zrbcx")
+        .arg("-K")
+        .arg("--dsiv")
         .arg("--b32")
-        .arg("env_secret_test")
+        .arg("--raw")
+        .write_stdin(ot)
         .output()
         .unwrap();
-    assert!(
-        enc_output.status.success(),
-        "enc failed: {}",
-        String::from_utf8_lossy(&enc_output.stderr)
-    );
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
+    assert!(dec_out.status.success());
+    assert_eq!(dec_out.stdout, b"payload-no-newline");
 
-    // Decode using $OBORON_SECRET env var
-    let mut dec_cmd = Command::cargo_bin("obz").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_SECRET", TEST_SECRET_B64)
-        .arg("dec")
-        .arg("--zrbcx")
-        .arg("--b32")
-        .arg(&encd)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("env_secret_test"));
-
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
-#[cfg(feature = "zrbcx")]
-#[test]
-fn test_obz_env_secret_overridden_by_flag() {
-    const TEST_SECRET_B64_ALT: &str = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
-    let test_home = test_home_dir();
-
-    // Encode with explicit --secret flag; env var holds a different secret
-    let mut enc_cmd = Command::cargo_bin("obz").unwrap();
-    let enc_output = enc_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_SECRET", TEST_SECRET_B64_ALT) // env var has different secret
-        .arg("enc")
-        .arg("--secret")
-        .arg(TEST_SECRET_B64) // --secret flag wins
-        .arg("--zrbcx")
-        .arg("--b32")
-        .arg("obz_flag_wins_test")
-        .output()
-        .unwrap();
-    assert!(enc_output.status.success());
-    let encd = String::from_utf8(enc_output.stdout)
-        .unwrap()
-        .trim()
-        .to_string();
-
-    // Decode must use the --secret flag secret
-    let mut dec_cmd = Command::cargo_bin("obz").unwrap();
-    dec_cmd
-        .env("HOME", test_home.as_os_str())
-        .env("OBORON_SECRET", TEST_SECRET_B64_ALT)
-        .arg("dec")
-        .arg("--secret")
-        .arg(TEST_SECRET_B64)
-        .arg("--zrbcx")
-        .arg("--b32")
-        .arg(&encd)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("obz_flag_wins_test"));
-
-    cleanup_test_home(&test_home);
-}
+// --- keygen ------------------------------------------------------------
 
 #[test]
-fn test_ob_keygen_prints_fresh_hex_key() {
-    // `ob keygen` prints a 128-char lowercase-hex key to stdout and
-    // touches no profile (no config dir needed).
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("ob").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
+fn test_keygen_prints_fresh_hex_key() {
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
         .arg("keygen")
         .assert()
         .success()
         .stdout(predicate::str::is_match(r"^[0-9a-f]{128}\n$").unwrap());
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
 }
 
 #[test]
-fn test_ob_keygen_differs_each_run() {
-    let test_home = test_home_dir();
+fn test_keygen_differs_each_run() {
+    let home = test_home_dir();
     let run = || {
-        Command::cargo_bin("ob")
-            .unwrap()
-            .env("HOME", test_home.as_os_str())
+        ob().env("HOME", home.as_os_str())
             .arg("keygen")
             .assert()
             .success()
@@ -839,19 +502,41 @@ fn test_ob_keygen_differs_each_run() {
             .clone()
     };
     assert_ne!(run(), run(), "two keygen runs should differ");
-    cleanup_test_home(&test_home);
+    cleanup_test_home(&home);
+}
+
+// --- --version single line --------------------------------------------
+
+#[test]
+fn test_version_line_format() {
+    let home = test_home_dir();
+    let out = ob()
+        .env("HOME", home.as_os_str())
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let line = String::from_utf8(out.stdout).unwrap();
+    // ob <impl> <version> protocol=1.0 cli=1.0, exactly one line.
+    assert!(
+        predicate::str::is_match(
+            r"^ob oboron-tools-rs \d+\.\d+\.\d+ protocol=1\.0 cli=1\.0\n$"
+        )
+        .unwrap()
+        .eval(&line),
+        "unexpected --version output: {line:?}"
+    );
+    cleanup_test_home(&home);
 }
 
 #[test]
-fn test_obz_secretgen_prints_fresh_secret() {
-    // `obz secretgen` prints a fresh 64-char hex secret (32 bytes) to
-    // stdout and touches no profile.
-    let test_home = test_home_dir();
-    let mut cmd = Command::cargo_bin("obz").unwrap();
-    cmd.env("HOME", test_home.as_os_str())
-        .arg("secretgen")
+fn test_version_before_subcommand() {
+    // --version must work with no subcommand and no key/stdin.
+    let home = test_home_dir();
+    ob().env("HOME", home.as_os_str())
+        .arg("-V")
         .assert()
         .success()
-        .stdout(predicate::str::is_match(r"^[0-9a-f]{64}\n$").unwrap());
-    cleanup_test_home(&test_home);
+        .stdout(predicate::str::starts_with("ob oboron-tools-rs "));
+    cleanup_test_home(&home);
 }

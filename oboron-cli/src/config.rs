@@ -14,7 +14,7 @@ use oboron_cli_core::commands::CliInfo;
 
 const CLI_INFO: CliInfo<'static> = CliInfo {
     binary_name: "ob",
-    default_scheme: "aasv",
+    default_scheme: "dsiv",
     default_encoding: Some("c32"),
 };
 
@@ -45,7 +45,7 @@ pub fn save_config(cfg: &Config) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn init_command(name: &str) -> Result<()> {
-    oboron_cli_core::commands::init_command(&CLI_INFO, name, || oboron::generate_key())
+    oboron_cli_core::commands::init_command(&CLI_INFO, name, oboron::generate_key)
 }
 
 /// `ob config show [--keyless]`. The `--keyless` mode prints oboron's
@@ -73,7 +73,7 @@ pub fn profile_activate_command(name: &str) -> Result<()> {
 }
 
 pub fn profile_create_command(name: &str, key: Option<&str>) -> Result<()> {
-    oboron_cli_core::commands::profile_create_command(name, key, || oboron::generate_key())
+    oboron_cli_core::commands::profile_create_command(name, key, oboron::generate_key)
 }
 
 pub fn profile_delete_command(name: &str) -> Result<()> {

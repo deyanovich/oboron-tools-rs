@@ -2,14 +2,13 @@
 
 `pip`-installable distribution of the
 [`oboron-cli`](https://crates.io/crates/oboron-cli) command-line
-binaries — `ob` (string-in / string-out symmetric encryption with
-obtext encoding) and `obz` (z-tier obfuscation).
+binary — `ob`, a string-in / string-out authenticated symmetric
+encryption tool with obtext encoding.
 
-The wheel is **binary-only**: it ships both prebuilt Rust
-binaries (`ob` and `obz`), packaged so `pip install oboron-cli`
-drops them on `$PATH`. There is no Python module — `import
-oboron_cli` will not work. Use the binaries from the shell, or
-via `subprocess`.
+The wheel is **binary-only**: it ships the prebuilt `ob` Rust
+binary, packaged so `pip install oboron-cli` drops it on `$PATH`.
+There is no Python module — `import oboron_cli` will not work. Use
+the binary from the shell, or via `subprocess`.
 
 ## Install
 
@@ -25,19 +24,15 @@ uv tool install oboron-cli
 
 ## What you get
 
-Two binaries:
-
-- **`ob`** — secure encryption (a-tier and u-tier schemes:
-  `aasv`, `aags`, `apsv`, `apgs`, `upbc`).
-- **`obz`** — z-tier obfuscation (non-secure; included with the
-  default `all-schemes` feature).
+The `ob` binary — authenticated encryption over the four oboron
+core schemes (`dsiv`, `psiv`, `dgcmsiv`, `pgcmsiv`):
 
 ```text
 ob <SUBCOMMAND>
 
 Subcommands:
   enc     (e)  Encrypt plaintext (output: obtext)
-  dec     (d)  Decrypt obtext (auto-detects scheme by default)
+  dec     (d)  Decrypt obtext (scheme supplied by the caller)
   keygen  (k)  Generate a fresh random 128-character hex key
   init    (i)  Initialize configuration with a fresh profile
   config  (c)  Show or update configuration
@@ -52,30 +47,46 @@ its [repository](https://gitlab.com/oboron/oboron-tools-rs/-/tree/master/oboron-
 
 ## Relation to the previous `oboron-cli` PyPI releases
 
-This is the first release of `oboron-cli` on PyPI from the
+`1.0.0` tracks oboron protocol spec 1.0 (rev3): authenticated
+only, the four property-prefixed core schemes, hex-only keys, and
+no scheme auto-detection. The obfuscation binary that earlier
+releases shipped is no longer part of `oboron-cli`. The earliest
+PyPI releases (0.1.0–0.3.0) came from the predecessor `oboron-rs`
+workspace; from 0.4.0 the distribution has been built from the
 [`oboron-tools-rs`](https://gitlab.com/oboron/oboron-tools-rs)
-workspace; previous PyPI releases (0.1.0, 0.2.0, 0.3.0) came
-from the predecessor `oboron-rs` workspace before `oboron-cli`
-moved here. The 0.4.0 jump mirrors the version of the underlying
-[Rust crate](https://crates.io/crates/oboron-cli/0.4.0).
+workspace.
 
 ## Why ship a Rust binary via pip?
 
 The Python ecosystem has the broadest reach for ad-hoc tool
 installation across operating systems. Users who already manage
-their tooling with `pip` or `uv` can pull in `ob` / `obz`
-without adding another package manager. Functionally identical
-to `cargo install oboron-cli` — different distribution channel,
-same binaries.
+their tooling with `pip` or `uv` can pull in `ob` without adding
+another package manager. Functionally identical to
+`cargo install oboron-cli` — different distribution channel, same
+binary.
 
 ## Conformance
 
-The `ob` and `obz` binaries inside the wheel are the same ones
-published to crates.io, validated end-to-end against the
-canonical oboron test vectors by
-[`oboron-cli-conformance`](https://crates.io/crates/oboron-cli-conformance)
-v0.2.0 (4197 pass, 0 fail across all five `ob` / `obz` suites).
+The `ob` binary inside the wheel is the same one published to
+crates.io, validated end-to-end against the canonical oboron test
+vectors by
+[`oboron-cli-conformance`](https://crates.io/crates/oboron-cli-conformance).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Licensed under either of
+
+- Apache License, Version 2.0
+  ([LICENSE-APACHE](LICENSE-APACHE) or
+  <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution
+intentionally submitted for inclusion in the work by you, as
+defined in the Apache-2.0 license, shall be dual licensed as
+above, without any additional terms or conditions.

@@ -2,8 +2,8 @@
 //!
 //! Different binaries care about different fields:
 //!
-//! - `obc` (obcrypt-cli): `profile`, `scheme`.
-//! - `ob`  (oboron-cli):  `profile`, `scheme`, `encoding`.
+//! - `obcrypt` (obcrypt-cli): `profile`, `scheme`.
+//! - `ob` / `obu`: `profile`, `scheme`, `encoding`.
 //!
 //! [`Config`] surfaces all known fields as `Option`. When writing, we
 //! read the existing file as a `serde_json::Value`, overwrite the
@@ -18,13 +18,31 @@ use std::path::PathBuf;
 use crate::paths::config_path;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Config {
-    /// Active profile name (used by both `ob` and `obc`).
+    /// Active profile name (used by every CLI).
     pub profile: Option<String>,
-    /// Default scheme (used by both).
+    /// Default scheme (used by every CLI).
     pub scheme: Option<String>,
-    /// Default encoding (oboron-only; obcrypt has no encoding layer).
+    /// Default encoding (`ob` / `obu`; obcrypt has no encoding layer).
     pub encoding: Option<String>,
+}
+
+impl Config {
+    /// Construct a config from its fields. Prefer this over a struct
+    /// literal: `Config` is `#[non_exhaustive]`, so new fields can be
+    /// added in a later minor release without breaking callers.
+    pub fn new(
+        profile: Option<String>,
+        scheme: Option<String>,
+        encoding: Option<String>,
+    ) -> Self {
+        Self {
+            profile,
+            scheme,
+            encoding,
+        }
+    }
 }
 
 /// Load `config.json`. Returns `Ok(None)` if the file doesn't exist.

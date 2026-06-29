@@ -1,6 +1,9 @@
-//! Shared CLI plumbing for the oboron-protocol CLIs (`ob` and `obc`).
+//! Shared CLI plumbing for the oboron-protocol CLIs (`ob`, `obcrypt`,
+//! and `obu`).
 //!
-//! Both binaries share a config directory at `~/.oboron/`:
+//! The authenticated `ob` / `obcrypt` binaries share a config directory
+//! at `~/.oboron/`; the unauthenticated `obu` binary uses `~/.obu/`
+//! (selected per-binary via [`set_env`] / [`CliEnv`]). The layout:
 //!
 //! ```text
 //! ~/.oboron/
@@ -13,9 +16,9 @@
 //!
 //! - **Path resolution** — `config_path`, `profile_dir`, `profile_path`, `backup_dir`.
 //! - **Name validation** — `validate_profile_name`.
-//! - **Key normalization** — `normalize_key_to_hex` accepts the canonical
-//!   128-char hex form *or* the legacy 86-char base64 form (during the
-//!   base64 deprecation period) and returns canonical hex.
+//! - **Key normalization** — `normalize_key_to_hex` validates the
+//!   canonical hex key/secret (length per the active [`CliEnv`]) and
+//!   returns it lowercased.
 //! - **Config / profile I/O** — `load_config`, `save_config`, `load_profile`,
 //!   `save_profile`, `list_profiles`, `delete_profile`, `rename_profile`.
 //!   File writes preserve unknown JSON fields so the two binaries don't
@@ -33,15 +36,17 @@
 
 pub mod commands;
 pub mod config;
+pub mod env;
 pub mod key;
 pub mod migration;
 pub mod paths;
 pub mod profile;
 
 pub use config::{load_config, save_config, Config};
-pub use key::{normalize_key_classify, normalize_key_to_hex, KeyFormat};
+pub use env::{set_env, CliEnv};
+pub use key::normalize_key_to_hex;
 pub use paths::{backup_dir, config_path, config_root, profile_dir, profile_path};
 pub use profile::{
-    delete_profile, list_profiles, load_profile, load_profile_key, load_profile_key_as_hex,
-    rename_profile, save_profile, validate_profile_name, KeyProfile, LoadedKey,
+    delete_profile, list_profiles, load_profile, load_profile_key_as_hex,
+    rename_profile, save_profile, validate_profile_name, KeyProfile,
 };

@@ -29,7 +29,7 @@ pub fn generate_completion(shell: Shell) {
 fn build_cli() -> Command {
     // This should match your main CLI structure
     Command::new("ob")
-        .about("Reversible hash-like references")
+        .about("Authenticated string-in/string-out encryption with obtext encoding")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommands(vec![
@@ -37,18 +37,20 @@ fn build_cli() -> Command {
                 .visible_alias("e")
                 .about("Encrypt+encode a plaintext string")
                 .arg(Arg::new("text").help("Plaintext string (reads from stdin if not provided)"))
-                .arg(Arg::new("key").short('k').long("key").help("Encryption key (86 base64 chars)").conflicts_with("profile").conflicts_with("keyless"))
+                .arg(Arg::new("key").short('k').long("key").help("Encryption key (128 hex chars)").conflicts_with("profile").conflicts_with("keyless"))
                 .arg(Arg::new("profile").short('p').long("profile").help("Use named key profile").conflicts_with("key").conflicts_with("keyless"))
-                .arg(Arg::new("keyless").short('K').long("keyless").action(clap::ArgAction::SetTrue).help("Use hardcoded key (INSECURE - testing only)").conflicts_with("key").conflicts_with("profile"))
-                .arg(Arg::new("format").short('f').long("format").help("Format specification (e.g., \"zrbcx.b64\", \"aags.b32\")")),
+                .arg(Arg::new("keyless").short('K').long("keyless").action(clap::ArgAction::SetTrue).help("Use the fixed public test key (INSECURE - testing only)").conflicts_with("key").conflicts_with("profile"))
+                .arg(Arg::new("format").short('f').long("format").help("Format specification (e.g., \"dsiv.b64\", \"dgcmsiv.b32\")"))
+                .arg(Arg::new("raw").short('0').long("raw").action(clap::ArgAction::SetTrue).help("Disable CLI line framing")),
             Command::new("dec")
                 .visible_alias("d")
                 .about("Decode+decrypt an obtext string")
                 .arg(Arg::new("text").help("Obtext string (reads from stdin if not provided)"))
-                .arg(Arg::new("key").short('k').long("key").help("Encryption key (86 base64 chars)").conflicts_with("profile").conflicts_with("keyless"))
+                .arg(Arg::new("key").short('k').long("key").help("Encryption key (128 hex chars)").conflicts_with("profile").conflicts_with("keyless"))
                 .arg(Arg::new("profile").short('p').long("profile").help("Use named key profile").conflicts_with("key").conflicts_with("keyless"))
-                .arg(Arg::new("keyless").short('K').long("keyless").action(clap::ArgAction::SetTrue).help("Use hardcoded key (INSECURE - testing only)").conflicts_with("key").conflicts_with("profile"))
-                .arg(Arg::new("format").short('f').long("format").help("Format specification (e.g., \"zrbcx.b64\", \"aags.b32\")")),
+                .arg(Arg::new("keyless").short('K').long("keyless").action(clap::ArgAction::SetTrue).help("Use the fixed public test key (INSECURE - testing only)").conflicts_with("key").conflicts_with("profile"))
+                .arg(Arg::new("format").short('f').long("format").help("Format specification (e.g., \"dsiv.b64\", \"dgcmsiv.b32\")"))
+                .arg(Arg::new("raw").short('0').long("raw").action(clap::ArgAction::SetTrue).help("Disable CLI line framing")),
             Command::new("init")
                 .visible_alias("i")
                 .about("Initialize configuration with random profile")
@@ -74,7 +76,7 @@ fn build_cli() -> Command {
                         .arg(Arg::new("name").required(true).help("Profile name")),
                     Command::new("create").visible_alias("c").about("Create a new key profile")
                         .arg(Arg::new("name").required(true).help("Profile name"))
-                        .arg(Arg::new("key").short('k').long("key").help("Encryption key (86 base64 chars)")),
+                        .arg(Arg::new("key").short('k').long("key").help("Encryption key (128 hex chars)")),
                     Command::new("delete").visible_alias("d").about("Delete a key profile")
                         .arg(Arg::new("name").required(true).help("Profile name")),
                     Command::new("rename").visible_alias("r").about("Rename a key profile")
@@ -82,14 +84,16 @@ fn build_cli() -> Command {
                         .arg(Arg::new("new_name").required(true).help("New profile name")),
                     Command::new("set").about("Set key for a profile")
                         .arg(Arg::new("name").required(true).help("Profile name"))
-                        .arg(Arg::new("key").short('k').long("key").help("Encryption key (86 base64 chars)")),
+                        .arg(Arg::new("key").short('k').long("key").help("Encryption key (128 hex chars)")),
                 ]),
             Command::new("key")
                 .visible_alias("k")
-                .about("Output the encryption key")
+                .about("Output the encryption key (canonical 128-char hex)")
                 .arg(Arg::new("profile").short('p').long("profile").help("Use named key profile"))
-                .arg(Arg::new("keyless").short('K').long("keyless").action(clap::ArgAction::SetTrue).help("Use hardcoded key (INSECURE - testing only)"))
-                .arg(Arg::new("hex").short('x').long("hex").action(clap::ArgAction::SetTrue).help("Output key as hex instead of base64")),
+                .arg(Arg::new("keyless").short('K').long("keyless").action(clap::ArgAction::SetTrue).help("Use the fixed public test key (INSECURE - testing only)"))
+                .arg(Arg::new("hex").short('x').long("hex").action(clap::ArgAction::SetTrue).help("Accepted no-op: hex is the only key output format")),
+            Command::new("keygen")
+                .about("Generate a fresh random key and print it"),
             Command::new("completion")
                 .about("Generate shell completion script")
                 .subcommands(vec![

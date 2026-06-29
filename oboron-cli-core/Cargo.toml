@@ -15,7 +15,6 @@ readme = "README.md"
 
 [dependencies]
 anyhow.workspace = true
-data-encoding.workspace = true
 dirs.workspace = true
 hex.workspace = true
 serde.workspace = true

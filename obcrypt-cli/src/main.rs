@@ -51,7 +51,7 @@ enum Commands {
         common: CommonOpts,
     },
 
-    /// Decrypt ciphertext bytes (scheme auto-detects from trailing marker if not given)
+    /// Decrypt ciphertext bytes under a scheme
     #[command(visible_alias = "d")]
     Decrypt {
         /// Ciphertext (reads stdin if absent). Raw bytes by default;
@@ -120,7 +120,7 @@ enum ConfigCommands {
     Show,
     /// Set configuration defaults
     Set {
-        /// Default scheme (aasv / aags / apsv / apgs / upbc)
+        /// Default scheme (dsiv / dgcmsiv / psiv / pgcmsiv)
         #[arg(short, long)]
         scheme: Option<String>,
         /// Active profile name
@@ -147,7 +147,7 @@ enum ProfileCommands {
     #[command(visible_alias = "c")]
     Create {
         name: String,
-        /// Key (128 hex chars, or legacy 86-char base64)
+        /// Key (128 hex chars)
         #[arg(short, long)]
         key: Option<String>,
     },
@@ -168,12 +168,12 @@ enum ProfileCommands {
 
 #[derive(Args, Debug)]
 struct CommonOpts {
-    /// Scheme to use (encrypt: required if no default in config;
-    /// decrypt: optional, auto-detects from the trailing marker)
+    /// Scheme to use (required unless a default is set in config).
+    /// obcrypt's output carries no marker, so dec does not auto-detect.
     #[arg(short, long, value_enum)]
     scheme: Option<SchemeArg>,
 
-    /// Encryption key (128 hex chars, or legacy 86-char base64)
+    /// Encryption key (128 hex chars)
     #[arg(short, long, conflicts_with = "profile")]
     key: Option<String>,
 
@@ -193,35 +193,30 @@ struct CommonOpts {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum SchemeArg {
     /// Deterministic AES-SIV (canonical default)
-    #[cfg(feature = "aasv")]
-    Aasv,
+    #[cfg(feature = "dsiv")]
+    Dsiv,
     /// Deterministic AES-GCM-SIV
-    #[cfg(feature = "aags")]
-    Aags,
+    #[cfg(feature = "dgcmsiv")]
+    Dgcmsiv,
     /// Probabilistic AES-SIV
-    #[cfg(feature = "apsv")]
-    Apsv,
+    #[cfg(feature = "psiv")]
+    Psiv,
     /// Probabilistic AES-GCM-SIV
-    #[cfg(feature = "apgs")]
-    Apgs,
-    /// Probabilistic AES-CBC (unauthenticated)
-    #[cfg(feature = "upbc")]
-    Upbc,
+    #[cfg(feature = "pgcmsiv")]
+    Pgcmsiv,
 }
 
 impl From<SchemeArg> for Scheme {
     fn from(s: SchemeArg) -> Self {
         match s {
-            #[cfg(feature = "aasv")]
-            SchemeArg::Aasv => Scheme::Aasv,
-            #[cfg(feature = "aags")]
-            SchemeArg::Aags => Scheme::Aags,
-            #[cfg(feature = "apsv")]
-            SchemeArg::Apsv => Scheme::Apsv,
-            #[cfg(feature = "apgs")]
-            SchemeArg::Apgs => Scheme::Apgs,
-            #[cfg(feature = "upbc")]
-            SchemeArg::Upbc => Scheme::Upbc,
+            #[cfg(feature = "dsiv")]
+            SchemeArg::Dsiv => Scheme::Dsiv,
+            #[cfg(feature = "dgcmsiv")]
+            SchemeArg::Dgcmsiv => Scheme::Dgcmsiv,
+            #[cfg(feature = "psiv")]
+            SchemeArg::Psiv => Scheme::Psiv,
+            #[cfg(feature = "pgcmsiv")]
+            SchemeArg::Pgcmsiv => Scheme::Pgcmsiv,
         }
     }
 }
@@ -322,7 +317,7 @@ fn run_encrypt(
     opts: CommonOpts,
 ) -> Result<()> {
     let key = resolve_key(&opts)?;
-    let scheme = resolve_scheme_for_encrypt(&opts)?;
+    let scheme = resolve_scheme(&opts)?;
 
     let raw_input = read_input(text, opts.in_file.as_deref())?;
     let plaintext = if hex_input {
@@ -351,7 +346,9 @@ fn run_decrypt(
     opts: CommonOpts,
 ) -> Result<()> {
     let key = resolve_key(&opts)?;
-    let scheme = opts.scheme.map(Scheme::from);
+    // The scheme is supplied by the caller — obcrypt's output carries no
+    // marker, so there is no auto-detection.
+    let scheme = resolve_scheme(&opts)?;
 
     let raw_input = read_input(text, opts.in_file.as_deref())?;
     let payload = if hex_input {
@@ -360,12 +357,8 @@ fn run_decrypt(
         raw_input
     };
 
-    let plaintext = match scheme {
-        Some(s) => obcrypt::decrypt_as(&payload, s, &key)
-            .map_err(|e| anyhow!("decrypt failed: {e}"))?,
-        None => obcrypt::decrypt(&payload, &key)
-            .map_err(|e| anyhow!("decrypt failed: {e}"))?,
-    };
+    let plaintext = obcrypt::decrypt(&payload, scheme, &key)
+        .map_err(|e| anyhow!("decrypt failed: {e}"))?;
 
     if hex_output {
         // Plaintext bytes encoded as hex for terminal-safe display.
@@ -388,14 +381,9 @@ fn run_keygen() -> Result<()> {
 
 fn resolve_key(opts: &CommonOpts) -> Result<Key> {
     let hex = if let Some(direct) = opts.key.as_deref() {
-        let (hex, fmt) = oboron_cli_core::normalize_key_classify(direct)
-            .context("invalid key passed via --key")?;
-        if fmt == oboron_cli_core::KeyFormat::LegacyBase64 {
-            warn_base64_via_key();
-        }
-        hex
+        require_hex_key(direct).context("invalid key passed via --key")?
     } else if let Some(name) = opts.profile.as_deref() {
-        oboron_cli_core::commands::load_profile_key_with_notice(name)?
+        oboron_cli_core::load_profile_key_as_hex(name)?
     } else {
         let cfg = config::load_config()?.ok_or_else(|| {
             anyhow!(
@@ -409,22 +397,24 @@ fn resolve_key(opts: &CommonOpts) -> Result<Key> {
                  set one with 'obcrypt config set --profile <NAME>'"
             )
         })?;
-        oboron_cli_core::commands::load_profile_key_with_notice(profile_name)?
+        oboron_cli_core::load_profile_key_as_hex(profile_name)?
     };
     Key::from_hex(&hex).map_err(|e| anyhow!("failed to parse key as hex: {e:?}"))
 }
 
-fn warn_base64_via_key() {
-    eprintln!(
-        "warning: --key was given as legacy base64. base64 keys are deprecated \
-         and will be removed before oboron 1.0;"
-    );
-    eprintln!(
-        "         pass a 128-character hex key instead. The base64 key was accepted."
-    );
+/// Validate a key string as exactly 128 lowercase hex characters
+/// (trimmed). Keys are hex-only — the protocol's canonical form; base64
+/// is no longer accepted.
+fn require_hex_key(key: &str) -> Result<String> {
+    let k = key.trim();
+    if k.len() == 128 && k.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        Ok(k.to_string())
+    } else {
+        bail!("key must be exactly 128 lowercase hex characters")
+    }
 }
 
-fn resolve_scheme_for_encrypt(opts: &CommonOpts) -> Result<Scheme> {
+fn resolve_scheme(opts: &CommonOpts) -> Result<Scheme> {
     if let Some(s) = opts.scheme {
         return Ok(s.into());
     }

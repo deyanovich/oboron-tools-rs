@@ -12,7 +12,7 @@ use oboron_cli_core::commands::CliInfo;
 
 const CLI_INFO: CliInfo<'static> = CliInfo {
     binary_name: "obcrypt",
-    default_scheme: "aasv",
+    default_scheme: "dsiv",
     // obcrypt has no encoding layer — payloads are raw bytes.
     default_encoding: None,
 };

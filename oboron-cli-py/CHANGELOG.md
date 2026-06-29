@@ -11,17 +11,38 @@ Rust crate — each PyPI release is a wheel-wrapped build of that
 crate at the same version. For per-binary changes, see the
 [crate's CHANGELOG](https://gitlab.com/oboron/oboron-tools-rs/-/blob/master/oboron-cli/CHANGELOG.md).
 
+## [1.0.0] — 2026-06-29
+
+Ships the `ob` binary from
+[`oboron-cli` 1.0.0](https://crates.io/crates/oboron-cli/1.0.0)
+as a single maturin bin-only wheel. This is the first stable
+release; the wheel version tracks the crate version.
+
+See the underlying crate's CHANGELOG for the substantive 1.0.0
+changes. Highlights:
+
+- Keys are canonical hex only (128 hex characters). The legacy
+  base64 key format is removed — no base64 acceptance, no
+  auto-migration.
+- `dec` reports every failure (bad encoding, wrong length,
+  authentication failure, invalid UTF-8, empty input) through a
+  single uniform stderr message with exit 1, so it is not a
+  decryption oracle.
+- Usage errors (conflicting or invalid flags, malformed format)
+  exit 2.
+
+The obfuscation binary that earlier releases shipped alongside
+`ob` is no longer part of this distribution.
+
 ## [0.5.0] — 2026-05-25
 
-Ships the `ob` and `obz` binaries from
+Ships the `ob` binary (alongside the then-bundled obfuscation
+binary) from
 [`oboron-cli` 0.5.0](https://crates.io/crates/oboron-cli/0.5.0)
 as a single maturin bin-only wheel.
 
 See the underlying crate's CHANGELOG for the substantive changes
-in 0.5.0: `obz` secrets become canonical 64-char hex (matching
-the `ob` / `obcrypt` key format; legacy base64 still accepted),
-`obz` config moves under the shared `~/.oboron/ztier/`, new `ob
-keygen` / `obz secretgen` generator commands, and the `ob key`
+in 0.5.0: the new `ob keygen` generator command and the `ob key`
 hex-default fix.
 
 ## [0.4.0] — 2026-05-23
@@ -34,7 +55,8 @@ moved here; the 0.4.0 jump mirrors the underlying
 [Rust crate](https://crates.io/crates/oboron-cli/0.4.0)'s
 version.
 
-Ships the `ob` and `obz` binaries from
+Ships the `ob` binary (alongside the then-bundled obfuscation
+binary) from
 [`oboron-cli` 0.4.0](https://crates.io/crates/oboron-cli/0.4.0)
 as a single maturin bin-only wheel.
 

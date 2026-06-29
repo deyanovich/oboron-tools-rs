@@ -70,6 +70,23 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # The workspace path-deps the sibling library crates for local
+      # development; they are absent on a CI runner, and cargo will not
+      # fall back to the registry for a {path, version} dep. Strip the
+      # local `../` path attributes so the wheel is built against the
+      # published crates.io releases (oboron-cli-core's in-workspace
+      # path has no `../` and is preserved). Python keeps this portable
+      # across the Linux / macOS / Windows matrix.
+      - name: Build against published libraries (strip local path-deps)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("Cargo.toml")
+          p.write_text(re.sub(r' path = "\.\./[^"]*",', '', p.read_text()))
+          print(p.read_text())
+          PY
+
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -98,6 +115,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Build against published libraries (strip local path-deps)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("Cargo.toml")
+          p.write_text(re.sub(r' path = "\.\./[^"]*",', '', p.read_text()))
+          PY
 
       - name: Build sdist
         uses: PyO3/maturin-action@v1

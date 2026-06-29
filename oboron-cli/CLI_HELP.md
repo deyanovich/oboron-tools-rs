@@ -1,12 +1,22 @@
 # Oboron CLI — Quick Reference
 
-Reversible hash-like references (secure schemes)
+Reversible hash-like references (authenticated schemes: `dsiv`, `psiv`, `dgcmsiv`, `pgcmsiv`)
 
 ## Usage
 
 ```
-ob <COMMAND>
+ob [GLOBAL OPTIONS] <COMMAND>
 ```
+
+Global options (valid before or after the command name):
+
+| Flag / Option | Short | Description |
+|---|---|---|
+| `--version` | `-V` | Print version provenance and exit |
+| `--help` | `-h` | Print help |
+
+`ob --version` prints a single provenance line, e.g.
+`ob oboron-tools-rs 1.0.0 protocol=1.0 cli=1.0`.
 
 ---
 
@@ -20,15 +30,15 @@ ob enc [OPTIONS] [TEXT]
 
 | Flag / Option | Short | Description |
 |---|---|---|
-| `--key <KEY>` | `-k` | Encryption key (86 base64 chars); conflicts with `--profile`/`--keyless` |
+| `--key <KEY>` | `-k` | Encryption key (128 hex chars); conflicts with `--profile`/`--keyless` |
 | `--profile <NAME>` | `-p` | Use named key profile; conflicts with `--key`/`--keyless` |
 | `--keyless` | `-K` | Use hardcoded key (INSECURE — testing only); conflicts with `--key`/`--profile` |
-| `--format <FORMAT>` | `-f` | Format string, e.g. `aasv.b64`; cannot combine with scheme/encoding flags |
-| `--aasv` | `-s` | Use aasv scheme (deterministic AES-SIV) |
-| `--apsv` | `-S` | Use apsv scheme (probabilistic AES-SIV) |
-| `--aags` | `-g` | Use aags scheme (deterministic AES-GCM-SIV) |
-| `--apgs` | `-G` | Use apgs scheme (probabilistic AES-GCM-SIV) |
-| `--upbc` | `-u` | Use upbc scheme (probabilistic AES-CBC, unauthenticated) |
+| `--format <FORMAT>` | `-f` | Format string, e.g. `dsiv.b64`; cannot combine with scheme/encoding flags |
+| `--raw` | `-0` | Disable line framing (no stdin newline strip, no stdout newline) |
+| `--dsiv` | `-s` | Use dsiv scheme (deterministic AES-SIV) |
+| `--psiv` | `-S` | Use psiv scheme (probabilistic AES-SIV) |
+| `--dgcmsiv` | `-g` | Use dgcmsiv scheme (deterministic AES-GCM-SIV) |
+| `--pgcmsiv` | `-G` | Use pgcmsiv scheme (probabilistic AES-GCM-SIV) |
 | `--c32` | `-c` | Use Crockford base32 encoding |
 | `--b32` | `-b` | Use RFC base32 encoding |
 | `--b64` | `-B` | Use base64 encoding |
@@ -49,23 +59,23 @@ ob dec [OPTIONS] [TEXT]
 
 | Flag / Option | Short | Description |
 |---|---|---|
-| `--key <KEY>` | `-k` | Encryption key (86 base64 chars); conflicts with `--profile`/`--keyless` |
+| `--key <KEY>` | `-k` | Encryption key (128 hex chars); conflicts with `--profile`/`--keyless` |
 | `--profile <NAME>` | `-p` | Use named key profile; conflicts with `--key`/`--keyless` |
 | `--keyless` | `-K` | Use hardcoded key (INSECURE — testing only); conflicts with `--key`/`--profile` |
-| `--format <FORMAT>` | `-f` | Format string, e.g. `aasv.b64`; cannot combine with scheme/encoding flags |
-| `--aasv` | `-s` | Use aasv scheme |
-| `--apsv` | `-S` | Use apsv scheme |
-| `--aags` | `-g` | Use aags scheme |
-| `--apgs` | `-G` | Use apgs scheme |
-| `--upbc` | `-u` | Use upbc scheme |
+| `--format <FORMAT>` | `-f` | Format string, e.g. `dsiv.b64`; cannot combine with scheme/encoding flags |
+| `--raw` | `-0` | Disable line framing (no stdin newline strip, no stdout newline) |
+| `--dsiv` | `-s` | Use dsiv scheme |
+| `--psiv` | `-S` | Use psiv scheme |
+| `--dgcmsiv` | `-g` | Use dgcmsiv scheme |
+| `--pgcmsiv` | `-G` | Use pgcmsiv scheme |
 | `--c32` | `-c` | Use Crockford base32 encoding |
 | `--b32` | `-b` | Use RFC base32 encoding |
 | `--b64` | `-B` | Use base64 encoding |
 | `--hex` | `-x` | Use hex encoding |
 | `--help` | `-h` | Print help |
 
-If `[TEXT]` is omitted, input is read from stdin.  When no scheme flag is given, the scheme is
-auto-detected from the obtext payload.
+If `[TEXT]` is omitted, input is read from stdin.  When no scheme flag is given, the default
+scheme (`dsiv`) is used; the scheme is not auto-detected from the obtext.
 
 ---
 
@@ -81,8 +91,9 @@ ob init [NAME]
 |---|---|
 | `[NAME]` | Profile name (default: `default`) |
 
-Creates `~/.ob/config.json` and `~/.ob/profiles/<NAME>.json`.  Backs up any existing profile
-to `~/.ob/bkp/` before overwriting.
+Creates `~/.oboron/config.json` and
+`~/.oboron/profiles/<NAME>.json`.  Backs up any existing profile
+to `~/.oboron/bkp/` before overwriting.
 
 ---
 
@@ -114,11 +125,10 @@ ob config set [OPTIONS]
 
 | Flag / Option | Short | Description |
 |---|---|---|
-| `--aasv` | `-s` | Set default scheme to aasv |
-| `--apsv` | `-S` | Set default scheme to apsv |
-| `--aags` | `-g` | Set default scheme to aags |
-| `--apgs` | `-G` | Set default scheme to apgs |
-| `--upbc` | `-u` | Set default scheme to upbc |
+| `--dsiv` | `-s` | Set default scheme to dsiv |
+| `--psiv` | `-S` | Set default scheme to psiv |
+| `--dgcmsiv` | `-g` | Set default scheme to dgcmsiv |
+| `--pgcmsiv` | `-G` | Set default scheme to pgcmsiv |
 | `--c32` | `-c` | Set default encoding to c32 |
 | `--b32` | `-b` | Set default encoding to b32 |
 | `--b64` | `-B` | Set default encoding to b64 |
@@ -175,7 +185,7 @@ ob profile c [OPTIONS] <NAME>
 
 | Option | Short | Description |
 |---|---|---|
-| `--key <KEY>` | `-k` | Encryption key (86 base64 chars); generated if omitted |
+| `--key <KEY>` | `-k` | Encryption key (128 hex chars); generated if omitted |
 | `--help` | `-h` | Print help |
 
 ### `profile delete <NAME>` (alias: `d`)
@@ -207,7 +217,7 @@ ob profile set [OPTIONS] <NAME>
 
 | Option | Short | Description |
 |---|---|---|
-| `--key <KEY>` | `-k` | Encryption key (86 base64 chars); generated if omitted |
+| `--key <KEY>` | `-k` | Encryption key (128 hex chars); generated if omitted |
 | `--help` | `-h` | Print help |
 
 ---
@@ -224,8 +234,21 @@ ob key [OPTIONS]
 |---|---|---|
 | `--profile <NAME>` | `-p` | Use named key profile |
 | `--keyless` | `-K` | Output the hardcoded key (INSECURE — testing only) |
-| `--hex` | `-x` | Output key as hex instead of base64 |
 | `--help` | `-h` | Print help |
+
+---
+
+## `keygen`
+
+Generate a fresh random key and print it to stdout.  Touches no
+profile or config and needs no key source.  Has **no** alias
+(unlike `key`, whose alias is `k`).
+
+```
+ob keygen
+```
+
+Prints a fresh canonical 128-character hex key.
 
 ---
 
@@ -246,68 +269,24 @@ ob completion <SHELL>
 
 ---
 
-## `obz` — Z-tier obfuscation tool
-
-> ⚠️ **NOT SECURE** — for obfuscation only, never for sensitive data.
-
-`obz` mirrors `ob` with these differences:
-
-- Uses "secret" (`--secret`/`-s`, 43 base64 chars) instead of "key" (`--key`/`-k`)
-- Config stored in `~/.obz/` instead of `~/.ob/`
-- Default scheme is `zrbcx` instead of `aasv`
-- Scheme flags: `--zrbcx`/`-r`, `--legacy`/`-l`
-- Encoding flags: `--c32`/`-c`, `--b32`/`-b`, `--b64`/`-B`, `--hex`/`-x`
-- `secret` command (alias: `s`) instead of `key`/`k`
-
-All subcommands (`enc`/`e`, `dec`/`d`, `init`/`i`, `config`/`c`, `profile`/`p`,
-`completion`) accept the same flags as their `ob` counterparts.
-
-**Short-alias convenience examples:**
-
-`ob enc/dec`:
-```
-# Instead of: ob enc --aasv --b32 'abc'
-ob e -sb 'abc'
-
-# Instead of: ob enc --aasv --b64 'abc'
-ob e -sB 'abc'
-
-# Instead of: ob enc --aasv --c32 'abc'
-ob e -sc 'abc'
-```
-
-`obz enc/dec`:
-```
-# Instead of: obz enc --zrbcx --b32 'abc'
-obz e -rb 'abc'
-
-# Instead of: obz enc --zrbcx --b64 'abc'
-obz e -rB 'abc'
-
-# Instead of: obz enc --zrbcx --c32 'abc'
-obz e -rc 'abc'
-```
-
----
-
 ## Environment Variables
 
-Both CLIs support environment variables for key/secret resolution.
+The CLI supports an environment variable for key resolution.
 
 | Variable | CLI | Description |
 |---|---|---|
-| `$OBORON_KEY` | `ob` | 86-character base64url-nopad encryption key (512-bit) |
-| `$OBORON_SECRET` | `obz` | 43-character base64url-nopad obfuscation secret (256-bit) |
+| `$OBORON_KEY` | `ob` | 128-character lowercase-hex encryption key (512-bit) |
 
 **Precedence order (highest to lowest):**
 
 | Priority | Source |
 |---|---|
-| 1 | `--key` / `--secret` CLI flag |
-| 2 | `$OBORON_KEY` / `$OBORON_SECRET` env var |
-| 3 | `--profile <NAME>` → profile file |
-| 4 | Default profile from config file |
+| 1 | `--keyless` flag (fixed public test key — INSECURE) |
+| 2 | `--key` CLI flag |
+| 3 | `$OBORON_KEY` env var |
+| 4 | `--profile <NAME>` → profile file |
+| 5 | Default profile from config file |
 
-When `$OBORON_KEY` (or `$OBORON_SECRET`) is set and the format is explicitly given,
+When `$OBORON_KEY` is set and the format is explicitly given,
 the CLI works without any config or profile on disk.
 

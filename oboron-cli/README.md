@@ -7,11 +7,8 @@
 [![oboron-py](https://img.shields.io/crates/v/oboron-py?label=oboron-py)](https://crates.io/crates/oboron-py)
 
 CLI for [Oboron](https://crates.io/crates/oboron) — general-purpose symmetric encryption and
-encoding.  Provides two binaries:
-- **`ob`** — Secure encryption CLI (a-tier and u-tier schemes: `aasv`, `aags`, `apsv`, `apgs`,
-  `upbc`)
-- **`obz`** — Z-tier obfuscation CLI (non-secure; requires the `ztier` feature, included in
-  the default `all-schemes` feature)
+encoding.  Provides the **`ob`** binary: an authenticated encryption CLI for the Oboron core
+schemes (`dsiv`, `psiv`, `dgcmsiv`, `pgcmsiv`).
 
 ## Contents
 
@@ -25,8 +22,8 @@ encoding.  Provides two binaries:
   - [ob config / ob c](#ob-config--ob-c)
   - [ob profile / ob p](#ob-profile--ob-p)
   - [ob key / ob k](#ob-key--ob-k)
+  - [ob keygen](#ob-keygen)
   - [ob completion](#ob-completion)
-- [The `obz` Binary](#the-obz-binary)
 - [Profile Management](#profile-management)
 - [Feature Flags](#feature-flags)
 - [Shell Completions](#shell-completions)
@@ -42,18 +39,10 @@ Install with all schemes enabled (default):
 cargo install oboron-cli
 ```
 
-Install with secure schemes only (no z-tier / no `obz` binary):
-```shell
-cargo install oboron-cli --no-default-features --features secure-schemes
-```
-
 Install with a single scheme (minimal binary):
 ```shell
-cargo install oboron-cli --no-default-features --features aasv
+cargo install oboron-cli --no-default-features --features dsiv
 ```
-
-> **Note:** The `obz` binary requires the `ztier` feature (included in the default
-> `all-schemes`).  If you install without it, only the `ob` binary will be built.
 
 ## Quick Start
 
@@ -89,32 +78,31 @@ ob enc -K "hello, world"
 
 Encrypt with a specific format:
 ```shell
-ob enc -f aasv.b64 "hello, world"
+ob enc -f dsiv.b64 "hello, world"
 ```
 
 ## Environment Variables
 
-Both CLIs support environment variables for key/secret resolution, enabling use without
-`ob init` / `obz init` (e.g., in CI/CD or containerized environments).
+The CLI supports an environment variable for key resolution, enabling use without
+`ob init` (e.g., in CI/CD or containerized environments).
 
 | Variable        | CLI   | Description                                               |
 |-----------------|-------|-----------------------------------------------------------|
-| `OBORON_KEY`    | `ob`  | 86-character base64url-nopad encryption key (512-bit)     |
-| `OBORON_SECRET` | `obz` | 43-character base64url-nopad obfuscation secret (256-bit) |
+| `OBORON_KEY`    | `ob`  | 128-character lowercase-hex encryption key (512-bit)      |
 
 **Precedence order (highest to lowest):**
 
-1. `--key` / `--secret` CLI flag (explicit, one-shot)
-2. `$OBORON_KEY` / `$OBORON_SECRET` env var
+1. `--key` CLI flag (explicit, one-shot)
+2. `$OBORON_KEY` env var
 3. `--profile <NAME>` → profile file lookup
-4. Default profile from `~/.ob/config.json` / `~/.obz/config.json`
+4. Default profile from `~/.oboron/config.json`
 5. Error with helpful message
 
 **CI/CD example — no `ob init` required:**
 
 ```shell
 export OBORON_KEY="$(ob key)"   # or inject from your secret store
-ob enc --aasv --b32 "data"      # works without ob init
+ob enc --dsiv --b32 "data"      # works without ob init
 echo "data" | ob enc -sB        # piping also works
 ```
 
@@ -136,16 +124,15 @@ ARGS:
     [TEXT]    Plaintext string (reads from stdin if not provided)
 
 OPTIONS:
-    -k, --key <KEY>         Encryption key (86 base64 chars)
+    -k, --key <KEY>         Encryption key (128 hex chars)
     -p, --profile <NAME>    Use named key profile
     -K, --keyless           Use hardcoded key (INSECURE - testing only)
-    -f, --format <FORMAT>   Format specification, e.g. "aasv.b64"
+    -f, --format <FORMAT>   Format specification, e.g. "dsiv.b64"
                             Cannot be combined with scheme or encoding flags
-    -s, --aasv              Use aasv scheme (deterministic AES-SIV)
-    -S, --apsv              Use apsv scheme (probabilistic AES-SIV)
-    -g, --aags              Use aags scheme (deterministic AES-GCM-SIV)
-    -G, --apgs              Use apgs scheme (probabilistic AES-GCM-SIV)
-    -u, --upbc              Use upbc scheme (probabilistic unauthenticated AES-CBC)
+    -s, --dsiv              Use dsiv scheme (deterministic AES-SIV)
+    -S, --psiv              Use psiv scheme (probabilistic AES-SIV)
+    -g, --dgcmsiv           Use dgcmsiv scheme (deterministic AES-GCM-SIV)
+    -G, --pgcmsiv           Use pgcmsiv scheme (probabilistic AES-GCM-SIV)
     -c, --c32               Use Crockford base32 encoding
     -b, --b32               Use RFC base32 encoding
     -B, --b64               Use base64 encoding
@@ -168,15 +155,14 @@ ARGS:
     [TEXT]    Obtext string (reads from stdin if not provided)
 
 OPTIONS:
-    -k, --key <KEY>         Encryption key (86 base64 chars)
+    -k, --key <KEY>         Encryption key (128 hex chars)
     -p, --profile <NAME>    Use named key profile
     -K, --keyless           Use hardcoded key (INSECURE - testing only)
-    -f, --format <FORMAT>   Format specification, e.g. "aasv.b64"
-    -s, --aasv              Use aasv scheme
-    -S, --apsv              Use apsv scheme
-    -g, --aags              Use aags scheme
-    -G, --apgs              Use apgs scheme (probabilistic AES-GCM-SIV)
-    -u, --upbc              Use upbc scheme
+    -f, --format <FORMAT>   Format specification, e.g. "dsiv.b64"
+    -s, --dsiv              Use dsiv scheme
+    -S, --psiv              Use psiv scheme
+    -g, --dgcmsiv           Use dgcmsiv scheme
+    -G, --pgcmsiv           Use pgcmsiv scheme (probabilistic AES-GCM-SIV)
     -c, --c32               Use Crockford base32 encoding
     -b, --b32               Use RFC base32 encoding
     -B, --b64               Use base64 encoding
@@ -184,8 +170,8 @@ OPTIONS:
     -h, --help              Print help
 ```
 
-When no scheme flag is given, `ob dec` uses auto-detection to determine the scheme from the
-obtext payload.
+When no scheme flag is given, `ob dec` uses the default scheme (`dsiv`); it does not
+auto-detect the scheme from the obtext.
 
 ### `ob init` / `ob i`
 
@@ -202,8 +188,10 @@ OPTIONS:
     -h, --help    Print help
 ```
 
-Creates `~/.ob/config.json` and `~/.ob/profiles/<NAME>.json` with a fresh 512-bit key.  Safe
-to re-run — existing profiles are backed up to `~/.ob/bkp/` before being overwritten.
+Creates `~/.oboron/config.json` and
+`~/.oboron/profiles/<NAME>.json` with a fresh 512-bit key.  Safe
+to re-run — existing profiles are backed up to `~/.oboron/bkp/`
+before being overwritten.
 
 ### `ob config` / `ob c`
 
@@ -233,11 +221,10 @@ USAGE:
     ob config set [OPTIONS]
 
 OPTIONS:
-    -s, --aasv              Set default scheme to aasv
-    -S, --apsv              Set default scheme to apsv
-    -g, --aags              Set default scheme to aags
-    -G, --apgs              Set default scheme to apgs
-    -u, --upbc              Set default scheme to upbc
+    -s, --dsiv              Set default scheme to dsiv
+    -S, --psiv              Set default scheme to psiv
+    -g, --dgcmsiv           Set default scheme to dgcmsiv
+    -G, --pgcmsiv           Set default scheme to pgcmsiv
     -c, --c32               Set default encoding to c32
     -b, --b32               Set default encoding to b32
     -B, --b64               Set default encoding to b64
@@ -304,9 +291,24 @@ USAGE:
 OPTIONS:
     -p, --profile <NAME>    Use named key profile
     -K, --keyless           Output the hardcoded key (INSECURE - testing only)
-    -x, --hex               Output key as hex instead of base64
     -h, --help              Print help
 ```
+
+`ob key` prints the key as 128 lowercase hexadecimal characters.
+
+### `ob keygen`
+
+Generate a fresh random key and print it to stdout — a
+scripting convenience that creates or modifies no profile and
+needs no config dir.  Unlike `ob key` (alias `ob k`), `keygen`
+has **no** short alias.
+
+```
+USAGE:
+    ob keygen
+```
+
+Prints a fresh canonical 128-character hex key.
 
 ### `ob completion`
 
@@ -325,64 +327,18 @@ SUBCOMMANDS:
 
 See [Shell Completions](#shell-completions) for installation instructions.
 
-## The `obz` Binary
+## Short-Alias Convenience Examples
 
-`obz` mirrors `ob` but operates on z-tier obfuscation schemes (`zrbcx`, `zmock`, `legacy`).
-
-> ⚠️ **WARNING: `obz` provides NO cryptographic security.**
-> Use only for obfuscation (e.g., hiding sequential IDs in non-security contexts).
-> Never use `obz` to protect sensitive data.
-
-Key differences from `ob`:
-
-| | `ob` | `obz` |
-|---|---|---|
-| Security | Cryptographically secure (AES-SIV, AES-GCM-SIV, AES-CBC) | Not secure |
-| Terminology | "key" (86 base64 chars, 512-bit) | "secret" (43 base64 chars, 256-bit) |
-| Config location | `~/.ob/` | `~/.obz/` |
-| Default scheme | `aasv` | `zrbcx` |
-| Feature flag | always available (a/u-tier) | requires `ztier` |
-
-Available `obz` scheme flags:
-- `-r`, `--zrbcx` — XOR-based obfuscation (deterministic)
-- `-l`, `--legacy` — Base32-based legacy obfuscation (fixed encoding)
-
-`obz` encoding short flags match `ob`: `-c`/`--c32`, `-b`/`--b32`, `-B`/`--b64`, `-x`/`--hex`.
-
-Commands and subcommands are otherwise identical to `ob`, substituting `obz` for `ob`,
-`secret` for `key`, and using `--secret`/`-s` instead of `--key`/`-k`.
-
-**Short-alias convenience examples:**
-
-`ob enc/dec`:
+`ob enc/dec` scheme and encoding short flags combine, e.g.:
 ```shell
-# Instead of: ob enc --aasv --b32 'abc'
+# Instead of: ob enc --dsiv --b32 'abc'
 ob e -sb 'abc'
 
-# Instead of: ob enc --aasv --b64 'abc'
+# Instead of: ob enc --dsiv --b64 'abc'
 ob e -sB 'abc'
 
-# Instead of: ob enc --aasv --c32 'abc'
+# Instead of: ob enc --dsiv --c32 'abc'
 ob e -sc 'abc'
-```
-
-`obz enc/dec`:
-```shell
-# Instead of: obz enc --zrbcx --b32 'abc'
-obz e -rb 'abc'
-
-# Instead of: obz enc --zrbcx --b64 'abc'
-obz e -rB 'abc'
-
-# Instead of: obz enc --zrbcx --c32 'abc'
-obz e -rc 'abc'
-```
-
-Example:
-```shell
-obz init
-obz enc "hello"
-obz dec <obtext>
 ```
 
 ## Profile Management
@@ -391,7 +347,7 @@ Profiles store encryption keys locally, eliminating the need to pass keys on the
 
 **Directory layout (`ob`):**
 ```
-~/.ob/
+~/.oboron/
 ├── config.json          # active profile, default scheme and encoding
 ├── profiles/
 │   ├── default.json     # default key profile
@@ -428,52 +384,43 @@ For deeper details on key management see the
 
 Features control which encryption schemes are compiled in, reducing binary size.
 
-**Default:** `all-schemes` (all schemes including z-tier)
+**Default:** the four authenticated schemes (`dsiv`, `psiv`, `dgcmsiv`, `pgcmsiv`)
 
 ### Individual schemes
 
-| Feature  | Scheme  | Description |
-|----------|---------|-------------|
-| `aasv`   | `aasv`  | Deterministic AES-SIV (authenticated) |
-| `aags`   | `aags`  | Deterministic AES-GCM-SIV (authenticated) |
-| `apsv`   | `apsv`  | Probabilistic AES-SIV (authenticated) |
-| `apgs`   | `apgs`  | Probabilistic AES-GCM-SIV (authenticated) |
-| `upbc`   | `upbc`  | Probabilistic AES-CBC (unauthenticated) |
-| `zrbcx`  | `zrbcx` | XOR-based obfuscation (z-tier, not secure) |
-| `zmock`  | `zmock` | Mock z-tier scheme (testing) |
-| `legacy` | `legacy`| Legacy base32 obfuscation (z-tier, not secure) |
-| `mock`   | —       | Mock schemes for testing |
+| Feature    | Scheme    | Description |
+|------------|-----------|-------------|
+| `dsiv`     | `dsiv`    | Deterministic AES-SIV (authenticated) |
+| `dgcmsiv`  | `dgcmsiv` | Deterministic AES-GCM-SIV (authenticated) |
+| `psiv`     | `psiv`    | Probabilistic AES-SIV (authenticated) |
+| `pgcmsiv`  | `pgcmsiv` | Probabilistic AES-GCM-SIV (authenticated) |
+| `mock`     | —         | Mock schemes for testing |
 
 ### Category features
 
 | Feature                  | Includes |
 |--------------------------|----------|
-| `atier`                  | `aasv`, `aags`, `apsv`, `apgs` |
-| `utier`                  | `upbc` |
-| `ztier`                  | `zrbcx`, `zmock`, `legacy` (enables `obz` binary) |
-| `secure-schemes`         | `atier` + `utier` |
-| `authenticated-schemes`  | `atier` |
-| `deterministic-schemes`  | `aasv`, `aags` |
-| `probabilistic-schemes`  | `apsv`, `apgs`, `upbc` |
-| `all-schemes`            | `atier` + `utier` + `ztier` *(default)* |
+| `authenticated-schemes`  | `dsiv`, `psiv`, `dgcmsiv`, `pgcmsiv` *(default)* |
+| `deterministic-schemes`  | `dsiv`, `dgcmsiv` |
+| `probabilistic-schemes`  | `psiv`, `pgcmsiv` |
 
 ### Examples
 
 ```toml
 # Cargo.toml — minimal single-scheme install
-oboron-cli = { version = "0.1", default-features = false, features = ["aasv"] }
+oboron-cli = { version = "1.0", default-features = false, features = ["dsiv"] }
 
-# Secure schemes only (no obz binary)
-oboron-cli = { version = "0.1", default-features = false, features = ["secure-schemes"] }
+# Deterministic schemes only
+oboron-cli = { version = "1.0", default-features = false, features = ["deterministic-schemes"] }
 ```
 
 Or via cargo install:
 ```shell
-# Secure schemes only
-cargo install oboron-cli --no-default-features --features secure-schemes
+# Deterministic schemes only
+cargo install oboron-cli --no-default-features --features deterministic-schemes
 
 # Single scheme
-cargo install oboron-cli --no-default-features --features aasv
+cargo install oboron-cli --no-default-features --features dsiv
 ```
 
 ## Shell Completions
@@ -510,18 +457,14 @@ To persist PowerShell completions, add the above line to your `$PROFILE`.
 
 For full details see the [`oboron` library on crates.io](https://crates.io/crates/oboron) or its [repository](https://gitlab.com/oboron/oboron-rs).
 
-| Scheme    | Algorithm   | Deterministic? | Authenticated? | Notes                              |
-|:----------|:------------|:---------------|:---------------|:-----------------------------------|
-| `aasv`    | AES-SIV     | Yes            | Yes            | General purpose, deterministic     |
-| `aags`    | AES-GCM-SIV | Yes            | Yes            | Deterministic alternative          |
-| `apsv`    | AES-SIV     | No             | Yes            | Maximum privacy protection         |
-| `apgs`    | AES-GCM-SIV | No             | Yes            | Probabilistic alternative          |
-| `upbc`    | AES-CBC     | No             | No             | Unauthenticated — use with caution |
-| `zrbcx`   | XOR         | Yes            | No             | Obfuscation only — not secure      |
-| `legacy`  | Base32      | Yes            | No             | Legacy obfuscation — not secure    |
+| Scheme     | Algorithm   | Deterministic? | Authenticated? | Notes                          |
+|:-----------|:------------|:---------------|:---------------|:-------------------------------|
+| `dsiv`     | AES-SIV     | Yes            | Yes            | General purpose, deterministic |
+| `dgcmsiv`  | AES-GCM-SIV | Yes            | Yes            | Deterministic alternative      |
+| `psiv`     | AES-SIV     | No             | Yes            | Maximum privacy protection     |
+| `pgcmsiv`  | AES-GCM-SIV | No             | Yes            | Probabilistic alternative      |
 
-All `a`-tier and `u`-tier schemes use 256-bit AES encryption.  Z-tier schemes are not
-cryptographically secure.
+All schemes are authenticated and use 256-bit AES encryption.
 
 ## Encodings Reference
 
@@ -541,13 +484,28 @@ cryptographically secure.
 
 ## Conformance
 
-The `ob` and `obz` binaries' encrypt / decrypt behavior is
+The `ob` binary's encrypt / decrypt behavior is
 validated end-to-end against the canonical oboron test vectors
 by
 [`oboron-cli-conformance`](https://crates.io/crates/oboron-cli-conformance)
-v0.2.0 — the same cross-implementation harness used to qualify
+1.0.0 — the same cross-implementation harness used to qualify
 alternative-language implementations of the protocol.
 
 ## License
 
-Licensed under the MIT license ([LICENSE](LICENSE)).
+Licensed under either of
+
+- Apache License, Version 2.0
+  ([LICENSE-APACHE](LICENSE-APACHE) or
+  <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution
+intentionally submitted for inclusion in the work by you, as
+defined in the Apache-2.0 license, shall be dual licensed as
+above, without any additional terms or conditions.

@@ -1,4 +1,5 @@
-//! CLI application for oboron secure schemes (a-tier and u-tier)
+//! CLI application for the authenticated oboron core schemes
+//! (`dsiv`, `psiv`, `dgcmsiv`, `pgcmsiv`).
 
 mod completions;
 mod config;
@@ -9,49 +10,92 @@ use config::Config;
 use oboron::{Encoding, Format, Scheme};
 use std::io::{self, Read};
 
+/// Protocol specification version implemented by this binary.
+const PROTOCOL_VERSION: &str = "1.0";
+/// CLI specification version implemented by this binary.
+const CLI_VERSION: &str = "1.0";
+/// Implementation name reported in the `--version` line.
+const IMPL_NAME: &str = "oboron-tools-rs";
+
+/// The single-line `--version` output required by the CLI spec:
+/// `ob <implementation> <version> protocol=<v> cli=<v>`.
+fn version_line() -> String {
+    format!(
+        "ob {} {} protocol={} cli={}",
+        IMPL_NAME,
+        env!("CARGO_PKG_VERSION"),
+        PROTOCOL_VERSION,
+        CLI_VERSION,
+    )
+}
+
+/// Uniform stderr message for every `dec` failure (CLI.md §8).
+const DEC_FAILURE_MSG: &str = "dec: invalid obtext";
+
+/// Print a usage error to stderr and exit with status `2` (CLI.md §8) —
+/// invalid/conflicting flags, malformed format, wrong argument count.
+/// Mirrors clap's own exit code for argument-parsing errors.
+fn usage_error(msg: impl std::fmt::Display) -> ! {
+    eprintln!("error: {msg}");
+    std::process::exit(2);
+}
+
+/// Report a uniform `dec` failure and exit `1` (CLI.md §8). Every
+/// decode/length/authentication/UTF-8/empty-plaintext failure collapses
+/// to one message so `dec` cannot become a decryption oracle: the cause
+/// MUST NOT be distinguishable, since it could leak information about
+/// secret input.
+fn dec_failure() -> ! {
+    eprintln!("{DEC_FAILURE_MSG}");
+    std::process::exit(1);
+}
+
 #[derive(Parser)]
 #[command(name = "ob")]
-#[command(version, about = "Reversible hash-like references (secure schemes)", long_about = None)]
+#[command(
+    about = "Authenticated string-in/string-out encryption with obtext encoding",
+    long_about = None,
+    disable_version_flag = true
+)]
 struct Cli {
+    /// Print version information and exit.
+    #[arg(short = 'V', long, global = true)]
+    version: bool,
+
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Args, Debug)]
 struct SchemeFlags {
-    /// Use upbc scheme (probabilistic unauthenticated)
-    #[cfg(feature = "upbc")]
-    #[arg(short = 'u', long, alias = "21p")]
-    upbc: bool,
+    /// Use dsiv scheme (deterministic AES-SIV)
+    #[cfg(feature = "dsiv")]
+    #[arg(short = 's', long)]
+    dsiv: bool,
 
-    /// Use aags scheme (deterministic AES-GCM-SIV)
-    #[cfg(feature = "aags")]
-    #[arg(short = 'g', long, alias = "31")]
-    aags: bool,
+    /// Use psiv scheme (probabilistic AES-SIV)
+    #[cfg(feature = "psiv")]
+    #[arg(short = 'S', long)]
+    psiv: bool,
 
-    /// Use apgs scheme (probabilistic AES-GCM-SIV)
-    #[cfg(feature = "apgs")]
-    #[arg(short = 'G', long, alias = "31p")]
-    apgs: bool,
+    /// Use dgcmsiv scheme (deterministic AES-GCM-SIV)
+    #[cfg(feature = "dgcmsiv")]
+    #[arg(short = 'g', long)]
+    dgcmsiv: bool,
 
-    /// Use aasv scheme (deterministic AES-SIV)
-    #[cfg(feature = "aasv")]
-    #[arg(short = 's', long, alias = "32")]
-    aasv: bool,
-
-    /// Use apsv scheme (probabilistic AES-SIV)
-    #[cfg(feature = "apsv")]
-    #[arg(short = 'S', long, alias = "32p")]
-    apsv: bool,
+    /// Use pgcmsiv scheme (probabilistic AES-GCM-SIV)
+    #[cfg(feature = "pgcmsiv")]
+    #[arg(short = 'G', long)]
+    pgcmsiv: bool,
 
     /// Use mock1 scheme (testing, identity)
     #[cfg(feature = "mock")]
-    #[arg(long, alias = "70", hide = true)]
+    #[arg(long, hide = true)]
     mock1: bool,
 
     /// Use mock2 scheme (testing, string reversal)
     #[cfg(feature = "mock")]
-    #[arg(long, alias = "71", hide = true)]
+    #[arg(long, hide = true)]
     mock2: bool,
 }
 
@@ -60,30 +104,25 @@ impl SchemeFlags {
         let mut count = 0;
         let mut scheme = None;
 
-        #[cfg(feature = "upbc")]
-        if self.upbc {
+        #[cfg(feature = "dsiv")]
+        if self.dsiv {
             count += 1;
-            scheme = Some(Scheme::Upbc);
+            scheme = Some(Scheme::Dsiv);
         }
-        #[cfg(feature = "aags")]
-        if self.aags {
+        #[cfg(feature = "psiv")]
+        if self.psiv {
             count += 1;
-            scheme = Some(Scheme::Aags);
+            scheme = Some(Scheme::Psiv);
         }
-        #[cfg(feature = "apgs")]
-        if self.apgs {
+        #[cfg(feature = "dgcmsiv")]
+        if self.dgcmsiv {
             count += 1;
-            scheme = Some(Scheme::Apgs);
+            scheme = Some(Scheme::Dgcmsiv);
         }
-        #[cfg(feature = "aasv")]
-        if self.aasv {
+        #[cfg(feature = "pgcmsiv")]
+        if self.pgcmsiv {
             count += 1;
-            scheme = Some(Scheme::Aasv);
-        }
-        #[cfg(feature = "apsv")]
-        if self.apsv {
-            count += 1;
-            scheme = Some(Scheme::Apsv);
+            scheme = Some(Scheme::Pgcmsiv);
         }
         #[cfg(feature = "mock")]
         if self.mock1 {
@@ -97,31 +136,27 @@ impl SchemeFlags {
         }
 
         if count > 1 {
-            anyhow::bail!("Only one scheme flag can be specified at a time");
+            usage_error("only one scheme flag may be specified");
         }
 
         Ok(scheme)
     }
 
     fn is_set(&self) -> bool {
-        #[cfg(feature = "upbc")]
-        if self.upbc {
+        #[cfg(feature = "dsiv")]
+        if self.dsiv {
             return true;
         }
-        #[cfg(feature = "aags")]
-        if self.aags {
+        #[cfg(feature = "psiv")]
+        if self.psiv {
             return true;
         }
-        #[cfg(feature = "apgs")]
-        if self.apgs {
+        #[cfg(feature = "dgcmsiv")]
+        if self.dgcmsiv {
             return true;
         }
-        #[cfg(feature = "aasv")]
-        if self.aasv {
-            return true;
-        }
-        #[cfg(feature = "apsv")]
-        if self.apsv {
+        #[cfg(feature = "pgcmsiv")]
+        if self.pgcmsiv {
             return true;
         }
         #[cfg(feature = "mock")]
@@ -179,7 +214,7 @@ impl EncodingFlags {
         }
 
         if count > 1 {
-            anyhow::bail!("Only one encoding flag can be specified at a time");
+            usage_error("only one encoding flag may be specified");
         }
 
         Ok(encoding)
@@ -209,15 +244,17 @@ impl FormatSpec {
     ) -> Result<Self> {
         // Check for conflicts between --format and individual flags
         if format_str.is_some() && scheme_flags.is_set() {
-            anyhow::bail!("Cannot use --format together with scheme flags");
+            usage_error("--format cannot be combined with scheme flags");
         }
         if format_str.is_some() && encoding_flags.is_set() {
-            anyhow::bail!("Cannot use --format together with encoding flags");
+            usage_error("--format cannot be combined with encoding flags");
         }
 
-        // Parse --format if provided
+        // Parse --format if provided. A malformed or unknown format
+        // identifier is a usage error (CLI.md §5, §8).
         if let Some(fmt_str) = format_str {
-            let format = Format::from_str(&fmt_str).map_err(|e| anyhow::anyhow!("{}", e))?;
+            let format = Format::from_str(&fmt_str)
+                .unwrap_or_else(|e| usage_error(format!("invalid format '{fmt_str}': {e}")));
             validate_secure_scheme(format.scheme())?;
             return Ok(Self {
                 scheme: format.scheme(),
@@ -234,7 +271,7 @@ impl FormatSpec {
 }
 
 impl std::fmt::Display for FormatSpec {
-    /// Format as a format string (e.g., "zrbcx.b64")
+    /// Format as a format string (e.g., "dsiv.b64")
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.scheme.as_str(), self.encoding.as_str())
     }
@@ -248,7 +285,7 @@ enum Commands {
         /// Plaintext string (reads from stdin if not provided)
         text: Option<String>,
 
-        /// Encryption key (128 hex chars, or legacy 86-char base64; for non-ztier schemes)
+        /// Encryption key (128 hex chars); conflicts with --keyless
         #[arg(short, long, conflicts_with = "profile", conflicts_with = "keyless")]
         key: Option<String>,
 
@@ -256,14 +293,18 @@ enum Commands {
         #[arg(short, long, conflicts_with = "key", conflicts_with = "keyless")]
         profile: Option<String>,
 
-        /// Use hardcoded key (INSECURE - testing only)
+        /// Use the fixed public test key (INSECURE - testing only)
         #[arg(short = 'K', long, conflicts_with = "key", conflicts_with = "profile")]
         keyless: bool,
 
-        /// Format specification (e.g., "zrbcx.b64", "aags.b32")
+        /// Format specification (e.g., "dsiv.b64", "dgcmsiv.b32").
         /// Cannot be combined with scheme or encoding flags
         #[arg(short, long)]
         format: Option<String>,
+
+        /// Disable CLI line framing (no stdin newline strip, no stdout newline)
+        #[arg(short = '0', long)]
+        raw: bool,
 
         /// Scheme selection
         #[command(flatten)]
@@ -280,7 +321,7 @@ enum Commands {
         /// Obtext string (reads from stdin if not provided)
         text: Option<String>,
 
-        /// Encryption key (128 hex chars, or legacy 86-char base64; for non-ztier schemes)
+        /// Encryption key (128 hex chars); conflicts with --keyless
         #[arg(short, long, conflicts_with = "profile", conflicts_with = "keyless")]
         key: Option<String>,
 
@@ -288,14 +329,18 @@ enum Commands {
         #[arg(short, long, conflicts_with = "key", conflicts_with = "keyless")]
         profile: Option<String>,
 
-        /// Use hardcoded key (INSECURE - testing only)
+        /// Use the fixed public test key (INSECURE - testing only)
         #[arg(short = 'K', long, conflicts_with = "key", conflicts_with = "profile")]
         keyless: bool,
 
-        /// Format specification (e.g., "zrbcx.b64", "aags.b32")
+        /// Format specification (e.g., "dsiv.b64", "dgcmsiv.b32").
         /// Cannot be combined with scheme or encoding flags
         #[arg(short, long)]
         format: Option<String>,
+
+        /// Disable CLI line framing (no stdin newline strip, no stdout newline)
+        #[arg(short = '0', long)]
+        raw: bool,
 
         /// Scheme selection
         #[command(flatten)]
@@ -332,24 +377,20 @@ enum Commands {
         command: ProfileCommands,
     },
 
-    /// Output the encryption key (canonical hex by default)
+    /// Output the encryption key (canonical 128-char hex)
     #[command(visible_alias = "k")]
     Key {
         /// Use named key profile
         #[arg(short, long)]
         profile: Option<String>,
 
-        /// Use hardcoded key (INSECURE - testing only)
+        /// Use the fixed public test key (INSECURE - testing only)
         #[arg(short = 'K', long)]
         keyless: bool,
 
-        /// Deprecated no-op: hex is now the default output format.
+        /// Accepted no-op: hex is the only key output format.
         #[arg(short = 'x', long)]
         hex: bool,
-
-        /// Output the key as legacy base64 (deprecated; removed before oboron 1.0)
-        #[arg(short = 'B', long, conflicts_with = "hex")]
-        base64: bool,
     },
 
     /// Generate a fresh random key and print it (does not touch any profile)
@@ -407,7 +448,7 @@ enum ProfileCommands {
         /// Profile name
         name: String,
 
-        /// Encryption key (128 hex chars, or legacy 86-char base64)
+        /// Encryption key (128 hex chars)
         #[arg(short, long)]
         key: Option<String>,
     },
@@ -432,7 +473,7 @@ enum ProfileCommands {
         /// Profile name
         name: String,
 
-        /// Encryption key (128 hex chars, or legacy 86-char base64)
+        /// Encryption key (128 hex chars)
         #[arg(short, long)]
         key: Option<String>,
     },
@@ -440,6 +481,25 @@ enum ProfileCommands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // --version is a global option: it must work before or after any
+    // command name and must not require a key, config, profile, or
+    // stdin. Handle it first and exit 0.
+    if cli.version {
+        println!("{}", version_line());
+        return Ok(());
+    }
+
+    // With --version handled, a subcommand is required.
+    let command = match cli.command {
+        Some(c) => c,
+        None => {
+            use clap::CommandFactory;
+            Cli::command().print_help().ok();
+            println!();
+            std::process::exit(2);
+        }
+    };
 
     // One-time migration of the legacy `~/.ob/` config dir from
     // older oboron-cli releases. No-op on fresh installs and on
@@ -462,19 +522,20 @@ fn main() -> Result<()> {
         }
     }
 
-    match cli.command {
+    match command {
         Commands::Enc {
             text,
             key,
             profile,
             keyless,
             format,
+            raw,
             scheme,
             encoding,
         } => {
             let cfg = config::load_config().ok();
             let format_spec = FormatSpec::parse(format, &scheme, &encoding, cfg.as_ref())?;
-            enc_command(text, key, profile, keyless, format_spec, cfg)
+            enc_command(text, key, profile, keyless, format_spec, raw, cfg)
         }
 
         Commands::Dec {
@@ -483,13 +544,13 @@ fn main() -> Result<()> {
             profile,
             keyless,
             format,
+            raw,
             scheme,
             encoding,
         } => {
             let cfg = config::load_config().ok();
-            let scheme_is_explicit = scheme.is_set() || format.is_some();
             let format_spec = FormatSpec::parse(format, &scheme, &encoding, cfg.as_ref())?;
-            dec_command(text, key, profile, keyless, format_spec, scheme_is_explicit, cfg)
+            dec_command(text, key, profile, keyless, format_spec, raw, cfg)
         }
 
         Commands::Init { name } => config::init_command(&name),
@@ -529,8 +590,7 @@ fn main() -> Result<()> {
             profile,
             keyless,
             hex,
-            base64,
-        } => key_command(profile, keyless, hex, base64),
+        } => key_command(profile, keyless, hex),
 
         Commands::Keygen => {
             // Convenience: print a fresh canonical-hex key. Does not
@@ -546,33 +606,44 @@ fn main() -> Result<()> {
     }
 }
 
+/// Write `s` to stdout, appending a single `\n` in default framing and
+/// nothing in `--raw` framing (CLI.md §7).
+fn write_output(s: &str, raw: bool) -> Result<()> {
+    use std::io::Write;
+    let mut out = io::stdout();
+    if raw {
+        out.write_all(s.as_bytes())?;
+    } else {
+        out.write_all(s.as_bytes())?;
+        out.write_all(b"\n")?;
+    }
+    out.flush()?;
+    Ok(())
+}
+
 fn enc_command(
     text: Option<String>,
     key: Option<String>,
     profile: Option<String>,
     keyless: bool,
     format_spec: FormatSpec,
+    raw: bool,
     cfg: Option<Config>,
 ) -> Result<()> {
     // Get text from argument or stdin
-    let text = get_text_input(text)?;
+    let text = get_text_input(text, raw)?;
 
     // Create format
     let format = format_spec.to_string();
 
     // Get ob instance
-    if keyless {
-        let ob = oboron::Ob::new_keyless(&format)?;
-        let encd = ob.enc(&text)?;
-        println!("{}", encd);
+    let encd = if keyless {
+        oboron::Ob::new_keyless(&format)?.enc(&text)?
     } else {
-        let b64_key = get_key(key.as_ref(), profile.as_deref(), cfg.as_ref())?;
-        let ob = oboron::Ob::new(&format, &b64_key)?;
-        let encd = ob.enc(&text)?;
-        println!("{}", encd);
-    }
-
-    Ok(())
+        let hex_key = get_key(key.as_ref(), profile.as_deref(), cfg.as_ref())?;
+        oboron::Ob::new(&format, &hex_key)?.enc(&text)?
+    };
+    write_output(&encd, raw)
 }
 
 fn dec_command(
@@ -581,36 +652,62 @@ fn dec_command(
     profile: Option<String>,
     keyless: bool,
     format_spec: FormatSpec,
-    scheme_is_explicit: bool,
+    raw: bool,
     cfg: Option<Config>,
 ) -> Result<()> {
-    // Get text from argument or stdin
-    let text = get_text_input(text)?;
-
-    // Create format
     let format = format_spec.to_string();
 
-    // Get ob instance and decode
-    if keyless {
-        let ob = oboron::Ob::new_keyless(&format)?;
-        let decd = if scheme_is_explicit {
-            ob.dec(&text)?
-        } else {
-            ob.autodec(&text)?
-        };
-        println!("{}", decd);
+    // Build the cipher first. Missing/invalid key and format problems
+    // are operation/usage errors with their own messages (CLI.md §6,
+    // §8) and are NOT part of the uniform dec contract. The scheme is
+    // supplied by the resolved format — `dec` never auto-detects.
+    let ob = if keyless {
+        oboron::Ob::new_keyless(&format)?
     } else {
-        let b64_key = get_key(key.as_ref(), profile.as_deref(), cfg.as_ref())?;
-        let ob = oboron::Ob::new(&format, &b64_key)?;
-        let decd = if scheme_is_explicit {
-            ob.dec(&text)?
-        } else {
-            ob.autodec(&text)?
-        };
-        println!("{}", decd);
-    }
+        let hex_key = get_key(key.as_ref(), profile.as_deref(), cfg.as_ref())?;
+        oboron::Ob::new(&format, &hex_key)?
+    };
 
-    Ok(())
+    // From here every failure is on (secret) obtext input and MUST
+    // collapse to one uniform message + exit 1 (CLI.md §8).
+    let input = read_dec_input(text, raw);
+    match ob.dec(&input) {
+        Ok(plaintext) => write_output(&plaintext, raw),
+        Err(_) => dec_failure(),
+    }
+}
+
+/// Read the obtext input for `dec`. Framing matches `enc` (§7): a
+/// positional `[TEXT]` is used exactly; otherwise stdin is read and, in
+/// default mode, one trailing line ending is stripped. Unlike `enc`,
+/// any failure to obtain non-empty valid-UTF-8 input collapses to the
+/// uniform dec failure (§8) — an empty or non-UTF-8 obtext is just
+/// invalid obtext, and reporting *why* would make `dec` an oracle.
+fn read_dec_input(text: Option<String>, raw: bool) -> String {
+    let s = match text {
+        Some(t) => t,
+        None => {
+            let mut bytes = Vec::new();
+            if io::stdin().read_to_end(&mut bytes).is_err() {
+                dec_failure();
+            }
+            if !raw {
+                if bytes.ends_with(b"\r\n") {
+                    bytes.truncate(bytes.len() - 2);
+                } else if bytes.ends_with(b"\n") {
+                    bytes.truncate(bytes.len() - 1);
+                }
+            }
+            match String::from_utf8(bytes) {
+                Ok(s) => s,
+                Err(_) => dec_failure(),
+            }
+        }
+    };
+    if s.is_empty() {
+        dec_failure();
+    }
+    s
 }
 
 fn config_set_command(
@@ -618,10 +715,12 @@ fn config_set_command(
     encoding_override: Option<Encoding>,
     profile: Option<String>,
 ) -> Result<()> {
-    let mut config = config::load_config().unwrap_or_else(|_| Config {
-        profile: Some("default".to_string()),
-        scheme: Some("aasv".to_string()),
-        encoding: Some("c32".to_string()),
+    let mut config = config::load_config().unwrap_or_else(|_| {
+        Config::new(
+            Some("default".to_string()),
+            Some("dsiv".to_string()),
+            Some("c32".to_string()),
+        )
     });
 
     if let Some(scheme) = scheme_override {
@@ -651,15 +750,10 @@ fn config_set_command(
     Ok(())
 }
 
-fn key_command(
-    profile: Option<String>,
-    keyless: bool,
-    _hex: bool,
-    base64: bool,
-) -> Result<()> {
-    // Resolve the key as canonical hex from whichever source applies,
-    // then emit. Hex is the canonical form and the default; `--hex` is
-    // an accepted no-op, `--base64` opts into the deprecated form.
+fn key_command(profile: Option<String>, keyless: bool, _hex: bool) -> Result<()> {
+    // Resolve the key as canonical 128-char hex from whichever source
+    // applies, then emit. Hex is the only key output format; `--hex` is
+    // an accepted no-op.
     let hex_key = if keyless {
         oboron::HARDCODED_KEY_HEX.to_string()
     } else {
@@ -667,11 +761,9 @@ fn key_command(
         let active_profile_name = cfg.as_ref().and_then(|c| c.profile.as_deref());
 
         if let Some(prof) = profile.as_deref().or(active_profile_name) {
-            // Migrate any legacy base64 profile in place and print a
-            // notice, exactly like enc / dec / config show / profile show.
-            oboron_cli_core::commands::load_profile_key_with_notice(prof)?
+            oboron_cli_core::load_profile_key_as_hex(prof)?
         } else if let Ok(env_key) = std::env::var("OBORON_KEY") {
-            oboron_cli_core::normalize_key_to_hex(&env_key).context("invalid $OBORON_KEY")?
+            require_hex_key(&env_key).context("invalid $OBORON_KEY")?
         } else {
             anyhow::bail!(
                 "No key specified: provide --profile, set $OBORON_KEY, or run 'ob init'"
@@ -679,50 +771,40 @@ fn key_command(
         }
     };
 
-    if base64 {
-        warn_base64_output();
-        let key_bytes = hex::decode(&hex_key).context("decode key")?;
-        println!("{}", data_encoding::BASE64URL_NOPAD.encode(&key_bytes));
-    } else {
-        println!("{hex_key}");
-    }
-
+    println!("{hex_key}");
     Ok(())
 }
 
-fn warn_base64_output() {
-    eprintln!(
-        "warning: base64 key output is deprecated and will be removed before \
-         oboron 1.0;"
-    );
-    eprintln!("         hex is the canonical key format and the default for 'ob key'.");
+/// Validate that `key` is a canonical oboron key — exactly 128
+/// lowercase hex characters — and return it. The CLI accepts no other
+/// key form (CLI.md §6).
+fn require_hex_key(key: &str) -> Result<String> {
+    let is_canonical =
+        key.len() == 128 && key.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !is_canonical {
+        anyhow::bail!("key must be exactly 128 lowercase hex characters");
+    }
+    Ok(key.to_string())
 }
 
 fn get_key(key: Option<&String>, profile: Option<&str>, config: Option<&Config>) -> Result<String> {
-    // 1. Explicit --key flag
+    // 1. Explicit --key flag (128-char hex only).
     if let Some(key_str) = key {
-        let (hex, fmt) = oboron_cli_core::normalize_key_classify(key_str).context("invalid --key")?;
-        if fmt == oboron_cli_core::KeyFormat::LegacyBase64 {
-            warn_base64_via("--key");
-        }
-        return Ok(hex);
+        return require_hex_key(key_str).context("invalid --key");
     }
 
-    // 2. Environment variable
+    // 2. Environment variable (128-char hex only).
     if let Ok(env_key) = std::env::var("OBORON_KEY") {
-        let (hex, fmt) =
-            oboron_cli_core::normalize_key_classify(&env_key).context("invalid $OBORON_KEY")?;
-        if fmt == oboron_cli_core::KeyFormat::LegacyBase64 {
-            warn_base64_via("$OBORON_KEY");
-        }
-        return Ok(hex);
+        return require_hex_key(&env_key).context("invalid $OBORON_KEY");
     }
 
-    // 3-4. Profile (explicit --profile or default from config)
+    // 3-4. Profile (explicit --profile or default from config). This is
+    // a convenience feature outside the CLI spec; the stored profile key
+    // is already normalized to canonical hex by the core.
     let profile_name = profile.or_else(|| config.and_then(|c| c.profile.as_deref()));
 
     if let Some(name) = profile_name {
-        return oboron_cli_core::commands::load_profile_key_with_notice(name);
+        return oboron_cli_core::load_profile_key_as_hex(name);
     }
 
     Err(anyhow::anyhow!(
@@ -730,63 +812,46 @@ fn get_key(key: Option<&String>, profile: Option<&str>, config: Option<&Config>)
     ))
 }
 
-fn warn_base64_via(source: &str) {
-    eprintln!(
-        "warning: {source} was given as legacy base64. base64 keys are deprecated \
-         and will be removed before oboron 1.0;"
-    );
-    eprintln!("         pass a 128-character hex key instead. The base64 key was accepted.");
-}
-
-#[allow(dead_code)]
-fn validate_base64_key(key_str: &str) -> Result<()> {
-    // Kept for any remaining callers (e.g. obz_main); new code uses
-    // oboron_cli_core::normalize_key_to_hex which accepts both formats.
-    if key_str.len() != 86 {
-        return Err(anyhow::anyhow!(
-            "Key must be 86 base64 chars, got {} chars",
-            key_str.len()
-        ));
-    }
-    use data_encoding::BASE64URL_NOPAD;
-    let key_bytes = BASE64URL_NOPAD
-        .decode(key_str.as_bytes())
-        .context("Invalid key base64 encoding")?;
-    if key_bytes.len() != 64 {
-        return Err(anyhow::anyhow!(
-            "Key must decode to 64 bytes, got {} bytes",
-            key_bytes.len()
-        ));
-    }
-
-    Ok(())
-}
-
-fn get_text_input(text: Option<String>) -> Result<String> {
-    match text {
-        Some(t) => Ok(t),
+/// Read the plaintext/obtext input for `enc` / `dec`.
+///
+/// If `[TEXT]` is supplied as a positional argument it is used exactly:
+/// stdin is not read and no trailing newline is stripped. Otherwise all
+/// of stdin is read as UTF-8. In default (non-raw) framing exactly one
+/// trailing line ending is removed — `\r\n` if present, else a lone
+/// `\n`; in `--raw` framing nothing is stripped. The resulting input
+/// must be non-empty (CLI.md §7).
+fn get_text_input(text: Option<String>, raw: bool) -> Result<String> {
+    let input = match text {
+        Some(t) => t,
         None => {
-            let mut buffer = String::new();
+            let mut bytes = Vec::new();
             io::stdin()
-                .read_to_string(&mut buffer)
+                .read_to_end(&mut bytes)
                 .context("failed to read from stdin")?;
-            let trimmed = buffer.trim();
-            if trimmed.is_empty() {
-                anyhow::bail!("no input provided");
+            if !raw {
+                if bytes.ends_with(b"\r\n") {
+                    bytes.truncate(bytes.len() - 2);
+                } else if bytes.ends_with(b"\n") {
+                    bytes.truncate(bytes.len() - 1);
+                }
             }
-            Ok(trimmed.to_string())
+            String::from_utf8(bytes).context("input is not valid UTF-8")?
         }
+    };
+    if input.is_empty() {
+        anyhow::bail!("no input provided");
     }
+    Ok(input)
 }
 
 fn get_scheme(scheme_override: Option<Scheme>, config: Option<&Config>) -> Result<Scheme> {
-    // Explicit flag takes precedence
+    // Explicit flag takes precedence.
     if let Some(scheme) = scheme_override {
         validate_secure_scheme(scheme)?;
         return Ok(scheme);
     }
 
-    // Fall back to config
+    // Then any persisted config default (convenience feature).
     if let Some(cfg) = config {
         if let Some(scheme_str) = cfg.scheme.as_deref() {
             let scheme = Scheme::from_str(scheme_str).map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -795,9 +860,8 @@ fn get_scheme(scheme_override: Option<Scheme>, config: Option<&Config>) -> Resul
         }
     }
 
-    Err(anyhow::anyhow!(
-        "scheme not specified: run 'ob init' or use a scheme flag or --format"
-    ))
+    // Otherwise the built-in default scheme (CLI.md §5): dsiv.
+    Scheme::from_str("dsiv").map_err(|e| anyhow::anyhow!("{}", e))
 }
 
 fn get_encoding(encoding_override: Option<Encoding>, config: Option<&Config>) -> Result<Encoding> {
@@ -809,30 +873,13 @@ fn get_encoding(encoding_override: Option<Encoding>, config: Option<&Config>) ->
             return Encoding::from_str(enc_str).map_err(|e| anyhow::anyhow!("{}", e));
         }
     }
-    Err(anyhow::anyhow!(
-        "encoding not specified: run 'ob init' or use an encoding flag or --format"
-    ))
+    // Built-in default encoding (CLI.md §5): c32.
+    Ok(Encoding::C32)
 }
 
-fn validate_secure_scheme(scheme: Scheme) -> Result<()> {
-    match scheme {
-        #[cfg(feature = "aags")]
-        Scheme::Aags => Ok(()),
-        #[cfg(feature = "apgs")]
-        Scheme::Apgs => Ok(()),
-        #[cfg(feature = "aasv")]
-        Scheme::Aasv => Ok(()),
-        #[cfg(feature = "apsv")]
-        Scheme::Apsv => Ok(()),
-        #[cfg(feature = "upbc")]
-        Scheme::Upbc => Ok(()),
-        #[cfg(feature = "mock")]
-        Scheme::Mock1 => Ok(()),
-        #[cfg(feature = "mock")]
-        Scheme::Mock2 => Ok(()),
-        _ => Err(anyhow::anyhow!(
-            "Invalid secure scheme: {}.  Use ob for secure schemes (aags, aasv, etc.) or obz for z-tier schemes",
-            scheme.as_str()
-        )),
-    }
+/// Accept only the authenticated core schemes (plus mock under the
+/// testing feature). Every scheme oboron now exposes is authenticated,
+/// so this is a thin guard kept for symmetry with the config path.
+fn validate_secure_scheme(_scheme: Scheme) -> Result<()> {
+    Ok(())
 }

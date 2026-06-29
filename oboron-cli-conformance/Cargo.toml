@@ -1,12 +1,10 @@
 [package]
 name = "oboron-cli-conformance"
-# 0.2.0: renamed the `obc` API surface to `obcrypt` (field
-# `Config::obc` → `Config::obcrypt`, function `run_obc_vectors`
-# → `run_obcrypt_vectors`, builder `with_obc` → `with_obcrypt`,
-# CLI flag `--obc` → `--obcrypt`, suite name `obc-vectors` →
-# `obcrypt-vectors`) to match the renamed obcrypt-cli binary.
-# Does not track the workspace version.
-version = "0.2.0"
+# 1.0.0: covers the oboron CLI spec 1.0 surface (`ob` / `obcrypt`):
+# the four authenticated schemes plus core negative vectors. The
+# unauthenticated obu CLI has its own separate conformance crate
+# (obu-cli-conformance), keeping the insecure layer segregated.
+version = "1.0.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -24,13 +22,11 @@ name = "oboron-cli-conformance"
 path = "src/bin/oboron-cli-conformance.rs"
 
 [features]
-default = ["aags", "aasv", "apgs", "apsv", "upbc", "ztier"]
-aags = []
-aasv = []
-apgs = []
-apsv = []
-upbc = []
-ztier = []
+default = ["dgcmsiv", "dsiv", "pgcmsiv", "psiv"]
+dgcmsiv = []
+dsiv = []
+pgcmsiv = []
+psiv = []
 
 [dependencies]
 serde.workspace = true

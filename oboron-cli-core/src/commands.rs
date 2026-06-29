@@ -12,32 +12,9 @@ use crate::config::{load_config, save_config, Config};
 use crate::key::normalize_key_to_hex;
 use crate::paths::{config_path, profile_path};
 use crate::profile::{
-    delete_profile, list_profiles, load_profile, load_profile_key,
+    delete_profile, list_profiles, load_profile, load_profile_key_as_hex,
     rename_profile, save_profile, validate_profile_name, KeyProfile,
 };
-
-/// Load `<name>`'s key as canonical hex, auto-migrating any legacy
-/// base64 in place and printing a stderr notice if a migration ran.
-///
-/// Wraps [`crate::profile::load_profile_key`]: that function does the
-/// mechanical migration; this one is the user-facing CLI helper that
-/// also reports the migration. Used both by the command handlers in
-/// this module and directly by each binary's key-resolution paths.
-pub fn load_profile_key_with_notice(name: &str) -> Result<String> {
-    let loaded = load_profile_key(name)?;
-    if let Some(backup) = &loaded.migrated_backup {
-        eprintln!(
-            "notice: profile '{name}' had a legacy base64 key; \
-             rewrote it as canonical hex (backup: {})",
-            backup.display(),
-        );
-        eprintln!(
-            "        base64 keys are deprecated and will be removed before \
-             oboron 1.0."
-        );
-    }
-    Ok(loaded.hex)
-}
 
 /// Binary-specific bits a command handler needs to know.
 pub struct CliInfo<'a> {
@@ -109,9 +86,7 @@ pub fn config_show_command(info: &CliInfo<'_>) -> Result<()> {
         .profile
         .as_deref()
         .ok_or_else(|| anyhow!("config has no active profile"))?;
-    // Eager-migrate any legacy base64 key in the active profile —
-    // display always shows canonical hex.
-    let key_hex = load_profile_key_with_notice(profile_name)?;
+    let key_hex = load_profile_key_as_hex(profile_name)?;
 
     println!("Current configuration:");
     println!("  Profile:  {profile_name}");
@@ -189,7 +164,7 @@ pub fn profile_show_command(info: &CliInfo<'_>, name: Option<&str>) -> Result<()
             .profile
             .ok_or_else(|| anyhow!("config has no active profile"))?,
     };
-    let key_hex = load_profile_key_with_notice(&profile_name)?;
+    let key_hex = load_profile_key_as_hex(&profile_name)?;
     println!("Profile '{profile_name}':");
     println!("  Key: {key_hex}");
     Ok(())
@@ -293,7 +268,7 @@ pub fn key_command(info: &CliInfo<'_>, profile_name: Option<&str>) -> Result<()>
             info.binary_name
         )
     })?;
-    let key_hex = load_profile_key_with_notice(prof)?;
+    let key_hex = load_profile_key_as_hex(prof)?;
     println!("{key_hex}");
     Ok(())
 }

@@ -6,11 +6,7 @@ use crate::*;
 use std::process::Command;
 
 fn is_deterministic_secure(format: &str) -> bool {
-    matches!(scheme_of(format), "aags" | "aasv")
-}
-
-fn is_deterministic_ztier(format: &str) -> bool {
-    matches!(scheme_of(format), "zrbcx" | "zmock1")
+    matches!(scheme_of(format), "dgcmsiv" | "dsiv")
 }
 
 fn run_ob(cfg: &Config, args: &[&str]) -> Result<String, String> {
@@ -33,26 +29,6 @@ fn run_ob(cfg: &Config, args: &[&str]) -> Result<String, String> {
         .map_err(|e| format!("ob stdout not utf-8: {e}"))
 }
 
-fn run_obz(cfg: &Config, args: &[&str]) -> Result<String, String> {
-    let home = TempHome::new();
-    let out = Command::new(&cfg.obz)
-        .env("HOME", home.path())
-        .args(args)
-        .output()
-        .map_err(|e| format!("spawn obz: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "obz {:?} exit {}\nstderr: {}",
-            args,
-            out.status,
-            String::from_utf8_lossy(&out.stderr),
-        ));
-    }
-    String::from_utf8(out.stdout)
-        .map(strip_trailing_newline)
-        .map_err(|e| format!("obz stdout not utf-8: {e}"))
-}
-
 fn run_obcrypt(cfg: &Config, args: &[&str]) -> Result<String, String> {
     let home = TempHome::new();
     let out = Command::new(&cfg.obcrypt)
@@ -73,9 +49,9 @@ fn run_obcrypt(cfg: &Config, args: &[&str]) -> Result<String, String> {
         .map_err(|e| format!("obcrypt stdout not utf-8: {e}"))
 }
 
-/// Vector-driven conformance for `ob` against the secure-scheme
-/// vectors (`test-vectors.jsonl`): `aags`, `aasv`, `apgs`, `apsv`,
-/// `upbc`. Hardcoded test key applied via `-K`.
+/// Vector-driven conformance for `ob` against the core-scheme
+/// vectors (`test-vectors.jsonl`): `dgcmsiv`, `dsiv`, `pgcmsiv`,
+/// `psiv`. Hardcoded test key applied via `-K`.
 pub fn run_ob_vectors(cfg: &Config) -> Report {
     let mut report = Report::default();
     let vectors = parse_vectors_jsonl(TEST_VECTORS_JSONL);
@@ -178,6 +154,65 @@ pub fn run_obcrypt_vectors(cfg: &Config) -> Report {
     report
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct NegativeVector {
+    op: String,
+    format: String,
+    input: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    reason: Option<String>,
+}
+
+/// Negative-vector conformance for `ob` (CLI.md §10): each input **MUST**
+/// fail its `op` as an operation failure — exit status `1`. Exit `2`
+/// (usage) or `0` (success) is a conformance failure. This also pins
+/// the uniform `dec`-failure contract (§8): a non-canonical encoding and
+/// an authentication failure both surface as the same operation failure.
+/// Covers core schemes only; obu negatives belong to the obu suite.
+pub fn run_ob_negative(cfg: &Config) -> Report {
+    let mut report = Report::default();
+    let vectors: Vec<NegativeVector> = NEGATIVE_TEST_VECTORS_JSONL
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).expect("parse negative vector"))
+        .collect();
+
+    for nv in &vectors {
+        let scheme = scheme_of(&nv.format);
+        let name = format!("ob_neg:{}:{}:{}", nv.op, nv.format, nv.input);
+        if !cfg.schemes.enabled(scheme) {
+            report.skip(name, format!("scheme {scheme} disabled"));
+            continue;
+        }
+        report.record(name, ob_one_negative(cfg, nv));
+    }
+    report
+}
+
+fn ob_one_negative(cfg: &Config, nv: &NegativeVector) -> Result<(), String> {
+    let home = TempHome::new();
+    let out = Command::new(&cfg.ob)
+        .env("HOME", home.path())
+        .args([
+            nv.op.as_str(),
+            "-K",
+            "--format",
+            &nv.format,
+            "--",
+            &nv.input,
+        ])
+        .output()
+        .map_err(|e| format!("spawn ob: {e}"))?;
+    match out.status.code() {
+        Some(1) => Ok(()),
+        other => Err(format!(
+            "expected exit 1 (operation failure), got {other:?}\nstderr: {}",
+            String::from_utf8_lossy(&out.stderr),
+        )),
+    }
+}
+
 fn obcrypt_one_vector(cfg: &Config, v: &TestVector) -> Result<(), String> {
     let scheme = scheme_of(&v.format);
     if is_deterministic_secure(&v.format) {
@@ -245,127 +280,5 @@ fn obcrypt_one_vector(cfg: &Config, v: &TestVector) -> Result<(), String> {
             ));
         }
     }
-    Ok(())
-}
-
-/// Vector-driven conformance for `obz` against the z-tier
-/// vectors (`zrbcx`). Hardcoded test secret applied via `-K`.
-pub fn run_obz_ztier_vectors(cfg: &Config) -> Report {
-    let mut report = Report::default();
-    let vectors = parse_vectors_jsonl(ZTIER_VECTORS_JSONL);
-
-    for v in &vectors {
-        let scheme = scheme_of(&v.format);
-        let name = format!("obz_ztier_vec:{}:{}", v.format, v.plaintext);
-
-        if !cfg.schemes.enabled(scheme) {
-            report.skip(name, format!("scheme {scheme} disabled"));
-            continue;
-        }
-
-        report.record(name, obz_ztier_one(cfg, v));
-    }
-
-    report
-}
-
-fn obz_ztier_one(cfg: &Config, v: &TestVector) -> Result<(), String> {
-    if is_deterministic_ztier(&v.format) {
-        let got = run_obz(
-            cfg,
-            &["enc", "-K", "--format", &v.format, "--", &v.plaintext],
-        )?;
-        if got != v.obtext {
-            return Err(format!(
-                "enc mismatch\n  expected: {}\n  got     : {}",
-                v.obtext, got
-            ));
-        }
-        let pt = run_obz(
-            cfg,
-            &["dec", "-K", "--format", &v.format, "--", &v.obtext],
-        )?;
-        if pt != v.plaintext {
-            return Err(format!(
-                "dec mismatch\n  expected: {}\n  got     : {}",
-                v.plaintext, pt
-            ));
-        }
-    } else {
-        let pt = run_obz(
-            cfg,
-            &["dec", "-K", "--format", &v.format, "--", &v.obtext],
-        )?;
-        if pt != v.plaintext {
-            return Err(format!(
-                "dec mismatch (canned)\n  expected: {}\n  got     : {}",
-                v.plaintext, pt
-            ));
-        }
-        let fresh = run_obz(
-            cfg,
-            &["enc", "-K", "--format", &v.format, "--", &v.plaintext],
-        )?;
-        let rt = run_obz(
-            cfg,
-            &["dec", "-K", "--format", &v.format, "--", &fresh],
-        )?;
-        if rt != v.plaintext {
-            return Err(format!(
-                "roundtrip mismatch\n  expected: {}\n  got     : {}",
-                v.plaintext, rt
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Vector-driven conformance for `obz` against the legacy-scheme
-/// vectors. Secret carried in the first-line meta entry; passed
-/// to `obz` via `-s <secret>`.
-pub fn run_obz_legacy_vectors(cfg: &Config) -> Report {
-    let mut report = Report::default();
-    let (secret, vectors) = parse_legacy_jsonl(LEGACY_VECTORS_JSONL);
-
-    for v in &vectors {
-        let name = format!("obz_legacy_vec:{}:{}", v.format, v.plaintext);
-        report.record(name, obz_legacy_one(cfg, &secret, v));
-    }
-
-    report
-}
-
-fn obz_legacy_one(
-    cfg: &Config,
-    secret: &str,
-    v: &TestVector,
-) -> Result<(), String> {
-    // Legacy is deterministic. Known bug: `dec` strips trailing
-    // '=' characters from plaintext; mirror that in the expected
-    // value so the assertion reflects observed behavior.
-    let expected_dec = v.plaintext.trim_end_matches('=').to_string();
-
-    let got = run_obz(
-        cfg,
-        &["enc", "-s", secret, "--format", &v.format, "--", &v.plaintext],
-    )?;
-    if got != v.obtext {
-        return Err(format!(
-            "enc mismatch\n  expected: {}\n  got     : {}",
-            v.obtext, got
-        ));
-    }
-
-    let pt = run_obz(
-        cfg,
-        &["dec", "-s", secret, "--format", &v.format, "--", &v.obtext],
-    )?;
-    if pt != expected_dec {
-        return Err(format!(
-            "dec mismatch (legacy trailing-'=' bug applied, original plaintext: {:?})\n  expected: {}\n  got     : {}",
-            v.plaintext, expected_dec, pt
-        ));
-    }
-
     Ok(())
 }

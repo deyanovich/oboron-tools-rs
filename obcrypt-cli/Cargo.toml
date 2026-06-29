@@ -1,6 +1,9 @@
 [package]
 name = "obcrypt-cli"
-version.workspace = true
+# 1.0.0: tracks obcrypt 1.0.0 (authenticated-only core; schemes
+# dsiv/psiv/dgcmsiv/pgcmsiv, hex-only keys, decrypt requires the
+# scheme — no marker auto-detect).
+version = "1.0.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -8,25 +11,21 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 authors.workspace = true
-description = "Command-line interface for obcrypt — bytes-in/bytes-out symmetric encryption (oboron protocol, a-tier + u-tier). Produces the `obcrypt` binary."
+description = "Command-line interface for obcrypt — bytes-in/bytes-out authenticated symmetric encryption (the oboron protocol's cryptographic core). Produces the `obcrypt` binary."
 keywords = ["cli", "encryption", "cryptography", "oboron"]
 categories = ["command-line-utilities", "cryptography"]
 readme = "README.md"
 
 [features]
-# obcrypt-cli is all-secure (a-tier authenticated, u-tier
-# unauthenticated but still real cryptography); there is no unsecure
-# subset, so no aggregate feature is needed. Mirrors obcrypt 0.2.0's
-# feature surface — the upper-layer feature vocabulary stays in
-# agreement with what `obcrypt` actually exposes.
-default = ["aags", "apgs", "aasv", "apsv", "upbc"]
+# The four authenticated core schemes obcrypt exposes; the default
+# pulls them all in. The feature vocabulary mirrors `obcrypt`.
+default = ["dgcmsiv", "pgcmsiv", "dsiv", "psiv"]
 
 # Individual schemes (forwarded to obcrypt)
-aags = ["obcrypt/aags"]
-apgs = ["obcrypt/apgs"]
-aasv = ["obcrypt/aasv"]
-apsv = ["obcrypt/apsv"]
-upbc = ["obcrypt/upbc"]
+dgcmsiv = ["obcrypt/dgcmsiv"]
+pgcmsiv = ["obcrypt/pgcmsiv"]
+dsiv = ["obcrypt/dsiv"]
+psiv = ["obcrypt/psiv"]
 mock = ["obcrypt/mock"]
 
 [[bin]]

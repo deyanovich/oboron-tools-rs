@@ -6,14 +6,24 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::{read_json_or_empty, write_json};
-use crate::key::{normalize_key_classify, normalize_key_to_hex, KeyFormat};
+use crate::key::normalize_key_to_hex;
 use crate::paths::{backup_dir, profile_dir, profile_path};
 
 #[derive(Debug, Default, Clone)]
+#[non_exhaustive]
 pub struct KeyProfile {
-    /// The key as stored. May be hex (128 chars, canonical) or base64
-    /// (86 chars, legacy/deprecated).
+    /// The stored key, in canonical hex (128 hex chars for `ob` /
+    /// `obcrypt`, 64 for `obu`).
     pub key: Option<String>,
+}
+
+impl KeyProfile {
+    /// Construct a profile from a stored key. Prefer this over a struct
+    /// literal: `KeyProfile` is `#[non_exhaustive]`, so new fields can
+    /// be added in a later minor release without breaking callers.
+    pub fn new(key: Option<String>) -> Self {
+        Self { key }
+    }
 }
 
 /// Validate a profile name (no path traversal; alphanumeric + `-` + `_` only).
@@ -46,61 +56,17 @@ pub fn load_profile(name: &str) -> Result<KeyProfile> {
     Ok(KeyProfile { key })
 }
 
-/// Load `<name>`'s key and return it as a 128-char hex string.
+/// Load `<name>`'s key and return it as a canonical hex string.
+///
+/// Keys are stored in canonical hex, so this validates the stored value
+/// and returns it. Errors if the profile is missing, has no `key`
+/// field, or the stored key is not canonical hex.
 pub fn load_profile_key_as_hex(name: &str) -> Result<String> {
     let p = load_profile(name)?;
     let key = p
         .key
         .ok_or_else(|| anyhow!("profile '{name}' has no `key` field"))?;
     normalize_key_to_hex(&key).with_context(|| format!("invalid key in profile '{name}'"))
-}
-
-/// Result of [`load_profile_key`]: the canonical hex key plus, if a
-/// migration happened, the path to the backup of the pre-migration
-/// profile file.
-#[derive(Debug, Clone)]
-pub struct LoadedKey {
-    pub hex: String,
-    /// `Some(path)` if the stored profile had a legacy base64 key
-    /// that we just rewrote in place to canonical hex; `None`
-    /// otherwise. Callers should display this to the user as a
-    /// migration notice.
-    pub migrated_backup: Option<PathBuf>,
-}
-
-/// Load `<name>`'s key as canonical hex, **auto-migrating** any
-/// legacy base64 profile in place.
-///
-/// If the stored key was 86-char base64, this rewrites the profile
-/// file with the equivalent 128-char hex (creating a backup of the
-/// pre-migration file). The returned [`LoadedKey::migrated_backup`]
-/// is `Some(path)` in that case, so callers can print a notice.
-///
-/// Used by the `ob` and `obc` CLIs during the base64 → hex transition;
-/// once base64 support is removed before oboron 1.0, this function
-/// becomes equivalent to [`load_profile_key_as_hex`].
-pub fn load_profile_key(name: &str) -> Result<LoadedKey> {
-    let p = load_profile(name)?;
-    let key = p
-        .key
-        .ok_or_else(|| anyhow!("profile '{name}' has no `key` field"))?;
-    let (hex, fmt) = normalize_key_classify(&key)
-        .with_context(|| format!("invalid key in profile '{name}'"))?;
-    let migrated_backup = if fmt == KeyFormat::LegacyBase64 {
-        // Rewrite the profile with the canonical hex form.
-        save_profile(
-            name,
-            &KeyProfile {
-                key: Some(hex.clone()),
-            },
-        )?
-    } else {
-        None
-    };
-    Ok(LoadedKey {
-        hex,
-        migrated_backup,
-    })
 }
 
 /// Save a profile. Preserves unknown fields; backs up the existing
